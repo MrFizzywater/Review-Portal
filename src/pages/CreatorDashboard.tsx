@@ -3,7 +3,7 @@ import { collection, query, where, onSnapshot, addDoc, serverTimestamp } from 'f
 import { db, auth } from '../firebase';
 import { User, signOut } from 'firebase/auth';
 import { Link } from 'react-router-dom';
-import { Plus, Folder, LogOut, ExternalLink, Settings, Copy, Users, Edit2, Trash2, CopyPlus, Archive, ArchiveRestore } from 'lucide-react';
+import { Plus, Folder, LogOut, ExternalLink, Settings, Copy, Users, Edit2, Trash2, CopyPlus, Archive, ArchiveRestore, CheckCircle } from 'lucide-react';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { deleteDoc, doc, updateDoc } from 'firebase/firestore';
 
@@ -15,6 +15,8 @@ interface Project {
   maxRevisions: number;
   password?: string;
   status?: 'active' | 'archived';
+  workflowStatus?: 'draft' | 'review' | 'changes' | 'approved' | 'completed';
+  priority?: 'low' | 'normal' | 'high';
   invoice?: any;
   createdAt: any;
 }
@@ -71,6 +73,14 @@ export default function CreatorDashboard({ user }: { user: User }) {
       unsubscribeClients();
     };
   }, [user.uid]);
+
+  const updateProjectField = async (projectId: string, field: string, value: any) => {
+    try {
+      await updateDoc(doc(db, 'projects', projectId), { [field]: value });
+    } catch (error) {
+      console.error(`Error updating ${field}`, error);
+    }
+  };
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -336,65 +346,136 @@ export default function CreatorDashboard({ user }: { user: User }) {
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {projects.filter(p => p.status !== 'archived').map(project => (
-                <Link
-                  key={project.id}
-                  to={`/project/${project.id}`}
-                  className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-gray-300 dark:hover:border-gray-600 transition-all group block relative"
-                >
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 group-hover:bg-black dark:group-hover:bg-white group-hover:text-white dark:group-hover:text-black transition-colors">
-                      <Folder className="w-5 h-5" />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button 
-                        onClick={(e) => { e.preventDefault(); handleArchiveProject(e, project.id, project.status); }}
-                        className="p-1.5 text-gray-400 hover:text-yellow-600 dark:hover:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 rounded-md transition-colors"
-                        title="Archive Project"
-                      >
-                        <Archive className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={(e) => { e.preventDefault(); handleDeleteProject(e, project.id); }}
-                        className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                        title="Delete Project"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={(e) => { e.preventDefault(); handleDuplicateProject(e, project); }}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                        title="Duplicate Project"
-                      >
-                        <CopyPlus className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={(e) => { e.preventDefault(); copyAccess(e, project); }}
-                        className="p-1.5 text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
-                        title="Copy Link & Password"
-                      >
-                        <Copy className="w-4 h-4" />
-                      </button>
+            {(() => {
+              const activeProjects = projects.filter(p => p.status !== 'archived');
+              if (activeProjects.length === 0 && !isCreatingProject) {
+                return (
+                  <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-300 dark:border-gray-700">
+                    <Folder className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+                    <h3 className="text-gray-900 dark:text-white font-medium mb-1">No active projects</h3>
+                    <p className="text-gray-500 dark:text-gray-400 text-sm">Create your first project to start sharing with clients.</p>
+                  </div>
+                );
+              }
+
+              const grouped = activeProjects.reduce((acc, project) => {
+                const clientName = project.clientName || 'No Client';
+                if (!acc[clientName]) acc[clientName] = [];
+                acc[clientName].push(project);
+                return acc;
+              }, {} as Record<string, Project[]>);
+
+              return Object.entries(grouped)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([clientName, clientProjects]) => (
+                  <div key={clientName} className="mb-10">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                      <Users className="w-5 h-5 text-gray-400" /> {clientName}
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {clientProjects.map(project => (
+                        <div
+                          key={project.id}
+                          className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-all group block relative"
+                        >
+                          <div className="flex justify-between items-start mb-4">
+                            <Link to={`/project/${project.id}`} className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 group-hover:bg-black dark:group-hover:bg-white group-hover:text-white dark:group-hover:text-black transition-colors">
+                              <Folder className="w-5 h-5" />
+                            </Link>
+                            <div className="flex items-center gap-1">
+                              <button 
+                                onClick={(e) => { e.preventDefault(); handleArchiveProject(e, project.id, project.status); }}
+                                className="p-1.5 text-gray-400 hover:text-yellow-600 dark:hover:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 rounded-md transition-colors"
+                                title="Archive Project"
+                              >
+                                <Archive className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={(e) => { e.preventDefault(); handleDeleteProject(e, project.id); }}
+                                className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
+                                title="Delete Project"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={(e) => { e.preventDefault(); handleDuplicateProject(e, project); }}
+                                className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
+                                title="Duplicate Project"
+                              >
+                                <CopyPlus className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={(e) => { e.preventDefault(); copyAccess(e, project); }}
+                                className="p-1.5 text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
+                                title="Copy Link & Password"
+                              >
+                                <Copy className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                          
+                          <Link to={`/project/${project.id}`} className="block mb-4">
+                            <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-1 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">{project.title}</h3>
+                          </Link>
+
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Status</span>
+                              <select
+                                value={project.workflowStatus || 'draft'}
+                                onChange={(e) => updateProjectField(project.id, 'workflowStatus', e.target.value)}
+                                className={`text-xs font-medium px-2 py-1 rounded-md outline-none cursor-pointer ${
+                                  project.workflowStatus === 'approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                  project.workflowStatus === 'changes' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                                  project.workflowStatus === 'review' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                                  project.workflowStatus === 'completed' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                                  'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                                }`}
+                              >
+                                <option value="draft">Drafting</option>
+                                <option value="review">In Review</option>
+                                <option value="changes">Changes Needed</option>
+                                <option value="approved">Approved</option>
+                                <option value="completed">Completed</option>
+                              </select>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">Priority</span>
+                              <select
+                                value={project.priority || 'normal'}
+                                onChange={(e) => updateProjectField(project.id, 'priority', e.target.value)}
+                                className={`text-xs font-medium px-2 py-1 rounded-md outline-none cursor-pointer ${
+                                  project.priority === 'high' ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20' :
+                                  project.priority === 'low' ? 'text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800' :
+                                  'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20'
+                                }`}
+                              >
+                                <option value="low">Low</option>
+                                <option value="normal">Normal</option>
+                                <option value="high">High</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {project.invoice && project.invoice.status !== 'draft' && (
+                            <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center text-sm">
+                              <span className="text-gray-500 dark:text-gray-400">Invoice</span>
+                              {project.invoice.status === 'paid' || (project.invoice.total - (project.invoice.amountPaid || 0)) <= 0 ? (
+                                <span className="text-green-600 dark:text-green-400 font-medium flex items-center gap-1"><CheckCircle className="w-3 h-3"/> Paid</span>
+                              ) : (
+                                <span className="text-orange-600 dark:text-orange-400 font-medium">
+                                  ${(project.invoice.total - (project.invoice.amountPaid || 0)).toFixed(2)} due
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-1">{project.title}</h3>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm mb-4">{project.clientName}</p>
-                  
-                  <div className="pt-4 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-                    <span>Manage versions</span>
-                    <ExternalLink className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </div>
-                </Link>
-              ))}
-              {projects.filter(p => p.status !== 'archived').length === 0 && !isCreatingProject && (
-                <div className="col-span-full text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-300 dark:border-gray-700">
-                  <Folder className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-                  <h3 className="text-gray-900 dark:text-white font-medium mb-1">No active projects</h3>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm">Create your first project to start sharing with clients.</p>
-                </div>
-              )}
-            </div>
+                ));
+            })()}
           </>
         )}
 
