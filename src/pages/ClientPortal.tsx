@@ -391,6 +391,25 @@ export default function ClientPortal() {
 
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-8 print:p-0">
         
+        {project.finalDelivery && (
+          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-6 print:hidden shadow-sm">
+            <h2 className="text-xl font-bold text-green-900 dark:text-green-400 flex items-center gap-2 mb-2">
+              <CheckCircle className="w-6 h-6" /> Final Files Ready
+            </h2>
+            <p className="text-green-800 dark:text-green-300 mb-4">
+              {project.finalDelivery.notes || "Your final deliverables have been uploaded and are ready to download."}
+            </p>
+            <a
+              href={project.finalDelivery.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold inline-flex items-center gap-2 transition-colors shadow-sm"
+            >
+              <Download className="w-5 h-5" /> Download Final Files
+            </a>
+          </div>
+        )}
+
         {currentVersion ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 print:hidden">
             
