@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, onSnapshot, addDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Lock, CheckCircle, AlertCircle, ExternalLink, Clock, Send, Upload, X, Plus, FileText, Download } from 'lucide-react';
+import { Lock, CheckCircle, AlertCircle, ExternalLink, Clock, Send, Upload, X, Plus, FileText, Download, Printer } from 'lucide-react';
 import { format } from 'date-fns';
 
 function getDriveEmbedUrl(url: string) {
@@ -301,10 +301,10 @@ export default function ClientPortal() {
 
   return (
     <div 
-      className="min-h-screen pb-12"
+      className="min-h-screen pb-12 print:bg-white print:pb-0"
       style={{ backgroundColor: `rgba(${brandRgb}, 0.02)` }}
     >
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm print:hidden">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
             {creatorProfile?.logoUrl && (
@@ -327,10 +327,10 @@ export default function ClientPortal() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-8 space-y-8">
+      <main className="max-w-6xl mx-auto px-4 py-8 space-y-8 print:p-0">
         
         {currentVersion ? (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 print:hidden">
             
             {/* Left Column: Player & Approval */}
             <div className="lg:col-span-2 space-y-6">
@@ -512,8 +512,8 @@ export default function ClientPortal() {
         )}
 
         {hasInvoice && (
-          <div className="mt-8 bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
+          <div className="mt-8 bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden print:shadow-none print:border-none print:mt-0">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center print:hidden" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg" style={{ backgroundColor: `rgba(${brandRgb}, 0.1)`, color: brandColor }}>
                   <FileText className="w-6 h-6" />
@@ -525,31 +525,101 @@ export default function ClientPortal() {
                   </p>
                 </div>
               </div>
-              {project.invoice.status === 'paid' ? (
-                <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1">
-                  <CheckCircle className="w-4 h-4" /> Paid
-                </span>
-              ) : (
-                <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-bold">
-                  Payment Pending
-                </span>
-              )}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
+                >
+                  <Printer className="w-4 h-4" /> Print
+                </button>
+                {project.invoice.status === 'paid' ? (
+                  <span className="bg-green-100 text-green-800 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1">
+                    <CheckCircle className="w-4 h-4" /> Paid
+                  </span>
+                ) : (
+                  <span className="bg-yellow-100 text-yellow-800 px-3 py-1.5 rounded-lg text-sm font-bold">
+                    Payment Pending
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="p-6">
+
+            {/* Print Only Header */}
+            <div className="hidden print:block p-8 pb-0">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h1 className="text-3xl font-bold text-gray-900 mb-2">INVOICE</h1>
+                  <p className="text-gray-600 font-medium">{project.title}</p>
+                </div>
+                <div className="text-right">
+                  <h2 className="font-bold text-gray-900">{creatorProfile?.displayName || 'Creator'}</h2>
+                  {creatorProfile?.businessAddress && (
+                    <p className="text-sm text-gray-600 whitespace-pre-wrap mt-1">{creatorProfile.businessAddress}</p>
+                  )}
+                  {creatorProfile?.taxId && (
+                    <p className="text-sm text-gray-600 mt-1">Tax ID: {creatorProfile.taxId}</p>
+                  )}
+                </div>
+              </div>
+              <div className="mt-8 flex justify-between border-t border-gray-200 pt-4">
+                <div>
+                  <p className="text-sm text-gray-500 font-medium">Billed To</p>
+                  <p className="font-bold text-gray-900">{project.clientName}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-gray-500 font-medium">Due Date</p>
+                  <p className="font-bold text-gray-900">{project.invoice.dueDate ? format(new Date(project.invoice.dueDate), 'MMM d, yyyy') : 'Receipt'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 print:p-8">
               <div className="space-y-4">
+                <div className="hidden print:flex border-b border-gray-300 pb-2 mb-2 font-bold text-gray-900">
+                  <div className="flex-1">Description</div>
+                  <div className="w-32 text-right">Amount</div>
+                </div>
                 {project.invoice.items.map((item: any, i: number) => (
-                  <div key={i} className="flex justify-between items-center border-b border-gray-100 pb-4 last:border-0 last:pb-0">
-                    <span className="text-gray-800 font-medium">{item.description}</span>
-                    <span className="text-gray-900 font-bold">${Number(item.amount).toFixed(2)}</span>
+                  <div key={i} className="flex justify-between items-center border-b border-gray-100 pb-4 last:border-0 last:pb-0 print:border-b print:border-gray-100 print:py-2">
+                    <span className="text-gray-800 font-medium flex-1">{item.description}</span>
+                    <span className="text-gray-900 font-bold w-32 text-right">${Number(item.amount).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
-              <div className="mt-6 pt-6 border-t border-gray-200 flex justify-between items-center">
-                <span className="text-gray-500 font-medium">Total Amount Due</span>
-                <span className="text-3xl font-bold" style={{ color: brandColor }}>${Number(project.invoice.total).toFixed(2)}</span>
+              <div className="mt-6 pt-6 border-t border-gray-200 flex justify-end">
+                <div className="w-64 space-y-2">
+                  <div className="flex justify-between text-gray-600">
+                    <span>Subtotal</span>
+                    <span>${Number(project.invoice.subtotal || project.invoice.total).toFixed(2)}</span>
+                  </div>
+                  {project.invoice.taxRate > 0 && (
+                    <div className="flex justify-between text-gray-600">
+                      <span>Tax ({project.invoice.taxRate}%)</span>
+                      <span>${Number(project.invoice.taxAmount).toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-lg font-bold text-gray-900 pt-2 border-t border-gray-100">
+                    <span>Total</span>
+                    <span style={{ color: brandColor }}>${Number(project.invoice.total).toFixed(2)}</span>
+                  </div>
+                  
+                  {project.invoice.amountPaid > 0 && (
+                    <div className="flex justify-between text-gray-600">
+                      <span>Amount Paid</span>
+                      <span>${Number(project.invoice.amountPaid).toFixed(2)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between text-xl font-bold text-gray-900 pt-2 border-t border-gray-200">
+                    <span>Balance Due</span>
+                    <span className={(project.invoice.total - (project.invoice.amountPaid || 0)) <= 0 ? 'text-green-600' : ''}>
+                      ${Math.max(0, project.invoice.total - (project.invoice.amountPaid || 0)).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
               </div>
               {project.invoice.notes && (
-                <div className="mt-6 p-4 rounded-lg bg-gray-50 border border-gray-100 text-sm text-gray-600 whitespace-pre-wrap">
+                <div className="mt-8 p-4 rounded-lg bg-gray-50 border border-gray-100 text-sm text-gray-600 whitespace-pre-wrap print:bg-transparent print:border-none print:p-0">
                   <strong className="block text-gray-900 mb-1">Payment Instructions:</strong>
                   {project.invoice.notes}
                 </div>
@@ -558,7 +628,7 @@ export default function ClientPortal() {
           </div>
         )}
 
-        <div className="mt-8 bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+        <div className="mt-8 bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden print:hidden">
           <div className="p-6 border-b border-gray-100 flex justify-between items-center" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
             <div>
               <h3 className="text-lg font-bold text-gray-900">Essential Elements</h3>
@@ -604,7 +674,7 @@ export default function ClientPortal() {
         </div>
 
         {pastVersions.length > 0 && (
-          <div className="mt-8">
+          <div className="mt-8 print:hidden">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Previous Versions</h3>
             <div className="space-y-3">
               {pastVersions.map(version => (
@@ -631,7 +701,7 @@ export default function ClientPortal() {
         )}
 
         {creatorProfile && (creatorProfile.displayName || creatorProfile.bio || creatorProfile.website || creatorProfile.contactEmail) && (
-          <div className="mt-8 bg-white rounded-xl shadow-md border border-gray-200 p-6">
+          <div className="mt-8 bg-white rounded-xl shadow-md border border-gray-200 p-6 print:hidden">
             <h3 className="text-lg font-bold text-gray-900 mb-4">About the Creator</h3>
             <div className="flex flex-col sm:flex-row items-start gap-6">
               {creatorProfile.logoUrl && (

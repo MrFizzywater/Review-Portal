@@ -3,8 +3,9 @@ import { useParams, Link } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, onSnapshot, addDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { User } from 'firebase/auth';
-import { ArrowLeft, Plus, Link as LinkIcon, Eye, CheckCircle, Clock, AlertCircle, ExternalLink, Image as ImageIcon, Settings, FileText, LayoutDashboard, Trash2, Save } from 'lucide-react';
+import { ArrowLeft, Plus, Link as LinkIcon, Eye, CheckCircle, Clock, AlertCircle, ExternalLink, Image as ImageIcon, Settings, FileText, LayoutDashboard, Trash2, Save, Printer } from 'lucide-react';
 import { format } from 'date-fns';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 function getDriveEmbedUrl(url: string) {
   const folderMatch = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
@@ -26,6 +27,7 @@ interface InvoiceItem {
 export default function ProjectDetails({ user }: { user: User }) {
   const { projectId } = useParams();
   const [project, setProject] = useState<any>(null);
+  const [creatorProfile, setCreatorProfile] = useState<any>(null);
   const [versions, setVersions] = useState<any[]>([]);
   const [changeRequests, setChangeRequests] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
@@ -43,12 +45,18 @@ export default function ProjectDetails({ user }: { user: User }) {
   const [invoiceDueDate, setInvoiceDueDate] = useState('');
   const [invoiceNotes, setInvoiceNotes] = useState('');
   const [invoiceStatus, setInvoiceStatus] = useState<'draft' | 'sent' | 'paid'>('draft');
+  const [amountPaid, setAmountPaid] = useState<number>(0);
   const [isSavingInvoice, setIsSavingInvoice] = useState(false);
 
   useEffect(() => {
     if (!projectId) return;
 
     const fetchProject = async () => {
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (userDoc.exists()) {
+        setCreatorProfile(userDoc.data());
+      }
+
       const docRef = doc(db, 'projects', projectId);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
@@ -61,6 +69,7 @@ export default function ProjectDetails({ user }: { user: User }) {
           setInvoiceDueDate(data.invoice.dueDate || '');
           setInvoiceNotes(data.invoice.notes || '');
           setInvoiceStatus(data.invoice.status || 'draft');
+          setAmountPaid(data.invoice.amountPaid || 0);
         }
       }
       setLoading(false);
@@ -155,12 +164,20 @@ export default function ProjectDetails({ user }: { user: User }) {
   const saveInvoice = async () => {
     setIsSavingInvoice(true);
     try {
-      const total = invoiceItems.reduce((sum, item) => sum + Number(item.amount), 0);
+      const subtotal = invoiceItems.reduce((sum, item) => sum + Number(item.amount), 0);
+      const taxRate = creatorProfile?.taxRate || 0;
+      const taxAmount = subtotal * (taxRate / 100);
+      const total = subtotal + taxAmount;
+
       const invoiceData = {
         items: invoiceItems,
         dueDate: invoiceDueDate,
         notes: invoiceNotes,
         status: invoiceStatus,
+        amountPaid,
+        subtotal,
+        taxRate,
+        taxAmount,
         total
       };
       await updateDoc(doc(db, 'projects', projectId!), {
@@ -195,61 +212,68 @@ export default function ProjectDetails({ user }: { user: User }) {
   if (loading) return <div className="p-8">Loading...</div>;
   if (!project) return <div className="p-8">Project not found</div>;
 
-  const invoiceTotal = invoiceItems.reduce((sum, item) => sum + Number(item.amount), 0);
+  const invoiceSubtotal = invoiceItems.reduce((sum, item) => sum + Number(item.amount), 0);
+  const invoiceTaxRate = creatorProfile?.taxRate || 0;
+  const invoiceTaxAmount = invoiceSubtotal * (invoiceTaxRate / 100);
+  const invoiceTotal = invoiceSubtotal + invoiceTaxAmount;
+  const invoiceBalanceDue = invoiceTotal - amountPaid;
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-12">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors pb-12">
+      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10 print:hidden transition-colors">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link to="/" className="text-gray-500 hover:text-gray-900">
+            <Link to="/" className="text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white transition-colors">
               <ArrowLeft className="w-5 h-5" />
             </Link>
-            <h1 className="font-bold text-gray-900">{project.title}</h1>
-            <span className="text-sm text-gray-500 px-2 py-1 bg-gray-100 rounded-md hidden sm:inline-block">
+            <h1 className="font-bold text-gray-900 dark:text-white">{project.title}</h1>
+            <span className="text-sm text-gray-500 dark:text-gray-400 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded-md hidden sm:inline-block">
               {project.clientName}
             </span>
           </div>
-          <button
-            onClick={copyClientLink}
-            className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-black transition-colors bg-gray-100 px-3 py-1.5 rounded-lg"
-          >
-            <LinkIcon className="w-4 h-4" />
-            <span className="hidden sm:inline">Copy Client Link</span>
-          </button>
+          <div className="flex items-center gap-4">
+            <ThemeToggle />
+            <button
+              onClick={copyClientLink}
+              className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white transition-colors bg-gray-100 dark:bg-gray-700 px-3 py-1.5 rounded-lg"
+            >
+              <LinkIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">Copy Client Link</span>
+            </button>
+          </div>
         </div>
-        <div className="max-w-5xl mx-auto px-4 flex gap-6 border-t border-gray-100">
+        <div className="max-w-5xl mx-auto px-4 flex gap-6 border-t border-gray-100 dark:border-gray-700 print:hidden">
           <button 
             onClick={() => setActiveTab('overview')}
-            className={`py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'overview' ? 'border-black text-black' : 'border-transparent text-gray-500 hover:text-gray-900'}`}
+            className={`py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'overview' ? 'border-black dark:border-white text-black dark:text-white' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
           >
             <LayoutDashboard className="w-4 h-4" /> Overview
           </button>
           <button 
             onClick={() => setActiveTab('invoice')}
-            className={`py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'invoice' ? 'border-black text-black' : 'border-transparent text-gray-500 hover:text-gray-900'}`}
+            className={`py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'invoice' ? 'border-black dark:border-white text-black dark:text-white' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
           >
             <FileText className="w-4 h-4" /> Invoice
           </button>
           <button 
             onClick={() => setActiveTab('settings')}
-            className={`py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'settings' ? 'border-black text-black' : 'border-transparent text-gray-500 hover:text-gray-900'}`}
+            className={`py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'settings' ? 'border-black dark:border-white text-black dark:text-white' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
           >
             <Settings className="w-4 h-4" /> Settings
           </button>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-8">
+      <main className="max-w-5xl mx-auto px-4 py-8 print:p-0">
         {activeTab === 'overview' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 print:hidden">
             {/* Left Column: Versions */}
             <div className="lg:col-span-2 space-y-6">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-gray-900">Versions</h2>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Versions</h2>
                 <button
                   onClick={() => setIsAddingVersion(true)}
-                  className="bg-black text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-gray-800 transition-colors"
+                  className="bg-black dark:bg-white text-white dark:text-black px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                   Add Version
@@ -257,69 +281,69 @@ export default function ProjectDetails({ user }: { user: User }) {
               </div>
 
               {isAddingVersion && (
-                <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
-                  <h3 className="font-bold text-gray-900 mb-4">New Version</h3>
+                <div className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 transition-colors">
+                  <h3 className="font-bold text-gray-900 dark:text-white mb-4">New Version</h3>
                   <form onSubmit={handleAddVersion} className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Google Drive Link</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Google Drive Link</label>
                       <input
                         type="url"
                         required
                         value={newVersion.driveLink}
                         onChange={e => setNewVersion({...newVersion, driveLink: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black outline-none"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none dark:bg-gray-700 dark:text-white"
                         placeholder="https://drive.google.com/..."
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
                       <select
                         value={newVersion.type}
                         onChange={e => setNewVersion({...newVersion, type: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black outline-none"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none dark:bg-gray-700 dark:text-white"
                       >
                         <option value="video">Video</option>
                         <option value="photo">Photo</option>
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Notes for Client</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes for Client</label>
                       <textarea
                         value={newVersion.creatorNotes}
                         onChange={e => setNewVersion({...newVersion, creatorNotes: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black outline-none h-24"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none h-24 dark:bg-gray-700 dark:text-white"
                         placeholder="What changed in this version?"
                       />
                     </div>
                     <div className="flex justify-end gap-2">
-                      <button type="button" onClick={() => setIsAddingVersion(false)} className="px-3 py-1.5 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
-                      <button type="submit" className="px-3 py-1.5 bg-black text-white rounded-lg">Upload Version</button>
+                      <button type="button" onClick={() => setIsAddingVersion(false)} className="px-3 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">Cancel</button>
+                      <button type="submit" className="px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors">Upload Version</button>
                     </div>
                   </form>
                 </div>
               )}
 
               {currentVersion && (
-                <div className="bg-white p-5 rounded-xl border border-black shadow-md">
+                <div className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-black dark:border-white shadow-md transition-colors">
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex items-center gap-3">
-                      <span className="bg-gray-100 text-gray-800 font-bold px-2.5 py-1 rounded-md text-sm">
+                      <span className="bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-bold px-2.5 py-1 rounded-md text-sm">
                         v{currentVersion.versionNumber}
                       </span>
-                      <span className="bg-green-100 text-green-800 text-xs font-medium px-2 py-0.5 rounded-full">Current</span>
-                      <span className="text-xs text-gray-500 flex items-center gap-1">
+                      <span className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 text-xs font-medium px-2 py-0.5 rounded-full">Current</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {currentVersion.createdAt ? format(currentVersion.createdAt.toDate(), 'MMM d, h:mm a') : 'Just now'}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      {currentVersion.status === 'pending' && <span className="text-yellow-600 text-sm flex items-center gap-1"><Eye className="w-4 h-4"/> Pending Review</span>}
-                      {currentVersion.status === 'approved' && <span className="text-green-600 text-sm flex items-center gap-1"><CheckCircle className="w-4 h-4"/> Approved</span>}
-                      {currentVersion.status === 'changes_requested' && <span className="text-red-600 text-sm flex items-center gap-1"><AlertCircle className="w-4 h-4"/> Changes Requested</span>}
+                      {currentVersion.status === 'pending' && <span className="text-yellow-600 dark:text-yellow-500 text-sm flex items-center gap-1"><Eye className="w-4 h-4"/> Pending Review</span>}
+                      {currentVersion.status === 'approved' && <span className="text-green-600 dark:text-green-400 text-sm flex items-center gap-1"><CheckCircle className="w-4 h-4"/> Approved</span>}
+                      {currentVersion.status === 'changes_requested' && <span className="text-red-600 dark:text-red-400 text-sm flex items-center gap-1"><AlertCircle className="w-4 h-4"/> Changes Requested</span>}
                     </div>
                   </div>
                   
-                  <div className="bg-gray-100 rounded-xl border border-gray-200 overflow-hidden mb-4 relative" style={{ paddingTop: '56.25%' }}>
+                  <div className="bg-gray-100 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-4 relative" style={{ paddingTop: '56.25%' }}>
                     <iframe
                       src={getDriveEmbedUrl(currentVersion.driveLink)}
                       className="absolute top-0 left-0 w-full h-full border-0"
@@ -329,8 +353,8 @@ export default function ProjectDetails({ user }: { user: User }) {
                   </div>
                   
                   {currentVersion.creatorNotes && (
-                    <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-700 border border-gray-100">
-                      <span className="font-medium block mb-1">Your notes:</span>
+                    <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg text-sm text-gray-700 dark:text-gray-300 border border-gray-100 dark:border-gray-600">
+                      <span className="font-medium block mb-1 text-gray-900 dark:text-white">Your notes:</span>
                       {currentVersion.creatorNotes}
                     </div>
                   )}
@@ -339,39 +363,39 @@ export default function ProjectDetails({ user }: { user: User }) {
 
               <div className="space-y-4">
                 {versions.filter(v => !v.isCurrent).map(version => (
-                  <div key={version.id} className="bg-white p-5 rounded-xl border border-gray-200 opacity-75">
+                  <div key={version.id} className="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 opacity-75 hover:opacity-100 transition-opacity">
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex items-center gap-3">
-                        <span className="bg-gray-100 text-gray-800 font-bold px-2.5 py-1 rounded-md text-sm">
+                        <span className="bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-bold px-2.5 py-1 rounded-md text-sm">
                           v{version.versionNumber}
                         </span>
-                        <span className="text-xs text-gray-500 flex items-center gap-1">
+                        <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           {version.createdAt ? format(version.createdAt.toDate(), 'MMM d, h:mm a') : 'Just now'}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        {version.status === 'pending' && <span className="text-yellow-600 text-sm flex items-center gap-1"><Eye className="w-4 h-4"/> Pending Review</span>}
-                        {version.status === 'approved' && <span className="text-green-600 text-sm flex items-center gap-1"><CheckCircle className="w-4 h-4"/> Approved</span>}
-                        {version.status === 'changes_requested' && <span className="text-red-600 text-sm flex items-center gap-1"><AlertCircle className="w-4 h-4"/> Changes Requested</span>}
+                        {version.status === 'pending' && <span className="text-yellow-600 dark:text-yellow-500 text-sm flex items-center gap-1"><Eye className="w-4 h-4"/> Pending Review</span>}
+                        {version.status === 'approved' && <span className="text-green-600 dark:text-green-400 text-sm flex items-center gap-1"><CheckCircle className="w-4 h-4"/> Approved</span>}
+                        {version.status === 'changes_requested' && <span className="text-red-600 dark:text-red-400 text-sm flex items-center gap-1"><AlertCircle className="w-4 h-4"/> Changes Requested</span>}
                       </div>
                     </div>
                     
-                    <a href={getDriveEmbedUrl(version.driveLink)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-sm font-medium flex items-center gap-1 mb-3">
+                    <a href={getDriveEmbedUrl(version.driveLink)} target="_blank" rel="noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline text-sm font-medium flex items-center gap-1 mb-3">
                       <ExternalLink className="w-4 h-4" /> View Content
                     </a>
                     
                     {version.creatorNotes && (
-                      <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-700 border border-gray-100">
-                        <span className="font-medium block mb-1">Your notes:</span>
+                      <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg text-sm text-gray-700 dark:text-gray-300 border border-gray-100 dark:border-gray-600">
+                        <span className="font-medium block mb-1 text-gray-900 dark:text-white">Your notes:</span>
                         {version.creatorNotes}
                       </div>
                     )}
                   </div>
                 ))}
                 {versions.length === 0 && !isAddingVersion && (
-                  <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
-                    <p className="text-gray-500">No versions uploaded yet.</p>
+                  <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-300 dark:border-gray-700">
+                    <p className="text-gray-500 dark:text-gray-400">No versions uploaded yet.</p>
                   </div>
                 )}
               </div>
@@ -379,12 +403,12 @@ export default function ProjectDetails({ user }: { user: User }) {
 
             {/* Right Column: Feedback & Assets */}
             <div className="space-y-6">
-              <h2 className="text-xl font-bold text-gray-900">Client Feedback</h2>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Client Feedback</h2>
               
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="p-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
-                  <span className="font-medium text-gray-700">Revisions Used</span>
-                  <span className="font-bold text-gray-900">{versions.length > 0 ? versions.length - 1 : 0} / {project.maxRevisions}</span>
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden transition-colors">
+                <div className="p-4 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                  <span className="font-medium text-gray-700 dark:text-gray-300">Revisions Used</span>
+                  <span className="font-bold text-gray-900 dark:text-white">{versions.length > 0 ? versions.length - 1 : 0} / {project.maxRevisions}</span>
                 </div>
                 
                 <div className="p-4 space-y-6 max-h-[600px] overflow-y-auto">
@@ -395,41 +419,41 @@ export default function ProjectDetails({ user }: { user: User }) {
                     if (versionRequests.length === 0 && !isApproved) return null;
 
                     return (
-                      <div key={version.id} className="border-b border-gray-100 pb-6 last:border-0 last:pb-0">
+                      <div key={version.id} className="border-b border-gray-100 dark:border-gray-700 pb-6 last:border-0 last:pb-0">
                         <div className="flex items-center gap-2 mb-3">
-                          <span className="text-xs font-bold bg-gray-100 px-2 py-1 rounded text-gray-600">
+                          <span className="text-xs font-bold bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-gray-600 dark:text-gray-300">
                             v{version.versionNumber}
                           </span>
                         </div>
                         
                         {isApproved && (
-                          <div className="bg-green-50 text-green-800 p-3 rounded-lg text-sm border border-green-100 mb-4">
+                          <div className="bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-400 p-3 rounded-lg text-sm border border-green-100 dark:border-green-900/30 mb-4">
                             <strong className="block mb-1 flex items-center gap-1"><CheckCircle className="w-4 h-4"/> Approved!</strong>
                             Next step: {version.nextStep?.replace('_', ' ')}
-                            {version.approvalNotes && <p className="mt-2 text-green-700">{version.approvalNotes}</p>}
+                            {version.approvalNotes && <p className="mt-2 text-green-700 dark:text-green-500">{version.approvalNotes}</p>}
                           </div>
                         )}
                         
                         {versionRequests.length > 0 && (
                           <div className="space-y-2">
                             {versionRequests.map(req => (
-                              <div key={req.id} className={`p-3 rounded-lg border ${req.completed ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200 shadow-sm'}`}>
+                              <div key={req.id} className={`p-3 rounded-lg border ${req.completed ? 'bg-gray-50 dark:bg-gray-700/30 border-gray-200 dark:border-gray-700' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-sm'}`}>
                                 <div className="flex justify-between items-start mb-1">
-                                  <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${req.isMajor ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
+                                  <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${req.isMajor ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400'}`}>
                                     {req.isMajor ? 'Important Fix' : 'Minor Tweak'}
                                   </span>
-                                  <label className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer hover:text-gray-900">
+                                  <label className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 cursor-pointer hover:text-gray-900 dark:hover:text-white">
                                     <input 
                                       type="checkbox" 
                                       checked={req.completed}
                                       onChange={(e) => toggleChangeCompletion(req.id, e.target.checked)}
-                                      className="rounded border-gray-300 text-black focus:ring-black"
+                                      className="rounded border-gray-300 dark:border-gray-600 text-black dark:text-white focus:ring-black dark:focus:ring-white dark:bg-gray-700"
                                     />
                                     Done
                                   </label>
                                 </div>
-                                <p className={`text-sm mt-1 ${req.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>{req.text}</p>
-                                <div className="text-[10px] text-gray-400 mt-2 flex justify-between">
+                                <p className={`text-sm mt-1 ${req.completed ? 'text-gray-500 dark:text-gray-500 line-through' : 'text-gray-900 dark:text-gray-200'}`}>{req.text}</p>
+                                <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-2 flex justify-between">
                                   <span>{req.reviewerName}</span>
                                   <span>{req.createdAt ? format(req.createdAt.toDate(), 'MMM d, h:mm a') : ''}</span>
                                 </div>
@@ -441,24 +465,24 @@ export default function ProjectDetails({ user }: { user: User }) {
                     );
                   })}
                   {changeRequests.length === 0 && !versions.some(v => v.status === 'approved') && (
-                    <p className="text-sm text-gray-500 text-center py-4">No feedback received yet.</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No feedback received yet.</p>
                   )}
                 </div>
               </div>
 
-              <h2 className="text-xl font-bold text-gray-900 mt-8">Essential Elements</h2>
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white mt-8">Essential Elements</h2>
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm p-4 transition-colors">
                 {assets.length === 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-4">No assets uploaded by client.</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">No assets uploaded by client.</p>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
                     {assets.map(asset => (
-                      <a key={asset.id} href={asset.data} download={asset.fileName} className="block group relative border border-gray-200 rounded-lg overflow-hidden">
+                      <a key={asset.id} href={asset.data} download={asset.fileName} className="block group relative border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                         {asset.fileType.startsWith('image/') ? (
                           <img src={asset.data} alt={asset.fileName} className="w-full h-24 object-cover group-hover:opacity-75 transition-opacity" />
                         ) : (
-                          <div className="w-full h-24 bg-gray-50 flex items-center justify-center group-hover:bg-gray-100 transition-colors">
-                            <ImageIcon className="w-8 h-8 text-gray-400" />
+                          <div className="w-full h-24 bg-gray-50 dark:bg-gray-700 flex items-center justify-center group-hover:bg-gray-100 dark:group-hover:bg-gray-600 transition-colors">
+                            <ImageIcon className="w-8 h-8 text-gray-400 dark:text-gray-500" />
                           </div>
                         )}
                         <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] p-1 truncate">
@@ -475,29 +499,66 @@ export default function ProjectDetails({ user }: { user: User }) {
         )}
 
         {activeTab === 'invoice' && (
-          <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 p-6 md:p-8">
-            <div className="flex justify-between items-center mb-6">
+          <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 p-6 md:p-8 print:shadow-none print:border-none print:p-0">
+            <div className="flex justify-between items-center mb-6 print:hidden">
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">Invoice Generator</h2>
                 <p className="text-gray-500">Attach an invoice to the client portal.</p>
               </div>
-              <select
-                value={invoiceStatus}
-                onChange={e => setInvoiceStatus(e.target.value as any)}
-                className={`px-3 py-1.5 rounded-lg font-medium text-sm border outline-none ${
-                  invoiceStatus === 'draft' ? 'bg-gray-100 text-gray-700 border-gray-200' :
-                  invoiceStatus === 'sent' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                  'bg-green-50 text-green-700 border-green-200'
-                }`}
-              >
-                <option value="draft">Draft (Hidden)</option>
-                <option value="sent">Sent (Visible to Client)</option>
-                <option value="paid">Paid</option>
-              </select>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors"
+                >
+                  <Printer className="w-4 h-4" /> Print
+                </button>
+                <select
+                  value={invoiceStatus}
+                  onChange={e => setInvoiceStatus(e.target.value as any)}
+                  className={`px-3 py-1.5 rounded-lg font-medium text-sm border outline-none ${
+                    invoiceStatus === 'draft' ? 'bg-gray-100 text-gray-700 border-gray-200' :
+                    invoiceStatus === 'sent' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                    'bg-green-50 text-green-700 border-green-200'
+                  }`}
+                >
+                  <option value="draft">Draft (Hidden)</option>
+                  <option value="sent">Sent (Visible to Client)</option>
+                  <option value="paid">Paid</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Print Only Header */}
+            <div className="hidden print:block mb-8">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h1 className="text-3xl font-bold text-gray-900 mb-2">INVOICE</h1>
+                  <p className="text-gray-600 font-medium">{project.title}</p>
+                </div>
+                <div className="text-right">
+                  <h2 className="font-bold text-gray-900">{creatorProfile?.displayName || 'Creator'}</h2>
+                  {creatorProfile?.businessAddress && (
+                    <p className="text-sm text-gray-600 whitespace-pre-wrap mt-1">{creatorProfile.businessAddress}</p>
+                  )}
+                  {creatorProfile?.taxId && (
+                    <p className="text-sm text-gray-600 mt-1">Tax ID: {creatorProfile.taxId}</p>
+                  )}
+                </div>
+              </div>
+              <div className="mt-8 flex justify-between border-t border-gray-200 pt-4">
+                <div>
+                  <p className="text-sm text-gray-500 font-medium">Billed To</p>
+                  <p className="font-bold text-gray-900">{project.clientName}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-gray-500 font-medium">Due Date</p>
+                  <p className="font-bold text-gray-900">{invoiceDueDate ? format(new Date(invoiceDueDate), 'MMM d, yyyy') : 'Receipt'}</p>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 print:hidden">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
                   <input
@@ -510,63 +571,110 @@ export default function ProjectDetails({ user }: { user: User }) {
               </div>
 
               <div>
-                <div className="flex justify-between items-center mb-2">
+                <div className="flex justify-between items-center mb-2 print:hidden">
                   <label className="block text-sm font-medium text-gray-700">Line Items</label>
                   <button onClick={addInvoiceItem} className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
                     <Plus className="w-4 h-4" /> Add Item
                   </button>
                 </div>
                 
-                <div className="space-y-3">
+                <div className="space-y-3 print:space-y-0">
+                  {/* Print Table Header */}
+                  <div className="hidden print:flex border-b border-gray-300 pb-2 mb-2 font-bold text-gray-900">
+                    <div className="flex-1">Description</div>
+                    <div className="w-32 text-right">Amount</div>
+                  </div>
+
                   {invoiceItems.map((item, index) => (
-                    <div key={index} className="flex gap-3 items-start">
+                    <div key={index} className="flex gap-3 items-start print:border-b print:border-gray-100 print:py-2">
                       <input
                         type="text"
                         value={item.description}
                         onChange={e => updateInvoiceItem(index, 'description', e.target.value)}
                         placeholder="Description (e.g. Video Editing)"
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black outline-none"
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black outline-none print:border-none print:p-0 print:bg-transparent"
                       />
-                      <div className="relative w-32">
-                        <span className="absolute left-3 top-2.5 text-gray-500">$</span>
+                      <div className="relative w-32 print:text-right">
+                        <span className="absolute left-3 top-2.5 text-gray-500 print:hidden">$</span>
                         <input
                           type="number"
                           value={item.amount}
                           onChange={e => updateInvoiceItem(index, 'amount', parseFloat(e.target.value) || 0)}
-                          className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black outline-none"
+                          className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black outline-none print:border-none print:p-0 print:bg-transparent print:text-right"
                         />
                       </div>
-                      <button onClick={() => removeInvoiceItem(index)} className="p-2 text-gray-400 hover:text-red-600 transition-colors">
+                      <button onClick={() => removeInvoiceItem(index)} className="p-2 text-gray-400 hover:text-red-600 transition-colors print:hidden">
                         <Trash2 className="w-5 h-5" />
                       </button>
                     </div>
                   ))}
                   {invoiceItems.length === 0 && (
-                    <div className="text-center py-8 bg-gray-50 border border-dashed border-gray-300 rounded-lg text-gray-500 text-sm">
+                    <div className="text-center py-8 bg-gray-50 border border-dashed border-gray-300 rounded-lg text-gray-500 text-sm print:hidden">
                       No items added yet.
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="flex justify-end border-t border-gray-100 pt-4">
-                <div className="text-right">
-                  <span className="text-gray-500 mr-4">Total Amount:</span>
-                  <span className="text-2xl font-bold text-gray-900">${invoiceTotal.toFixed(2)}</span>
+              <div className="flex justify-end border-t border-gray-100 pt-4 mt-4">
+                <div className="w-64 space-y-2">
+                  <div className="flex justify-between text-gray-600">
+                    <span>Subtotal</span>
+                    <span>${invoiceSubtotal.toFixed(2)}</span>
+                  </div>
+                  {invoiceTaxRate > 0 && (
+                    <div className="flex justify-between text-gray-600">
+                      <span>Tax ({invoiceTaxRate}%)</span>
+                      <span>${invoiceTaxAmount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-lg font-bold text-gray-900 pt-2 border-t border-gray-100">
+                    <span>Total</span>
+                    <span>${invoiceTotal.toFixed(2)}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center pt-4 print:hidden">
+                    <span className="text-sm font-medium text-gray-700">Amount Paid</span>
+                    <div className="flex items-center gap-2">
+                      <div className="relative w-24">
+                        <span className="absolute left-2 top-1.5 text-gray-500 text-sm">$</span>
+                        <input
+                          type="number"
+                          value={amountPaid}
+                          onChange={e => setAmountPaid(parseFloat(e.target.value) || 0)}
+                          className="w-full pl-5 pr-2 py-1 border border-gray-300 rounded-md text-sm outline-none focus:ring-1 focus:ring-black"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 print:hidden">
+                    <button onClick={() => setAmountPaid(invoiceTotal / 2)} className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded font-medium">Half</button>
+                    <button onClick={() => setAmountPaid(invoiceTotal)} className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded font-medium">All</button>
+                  </div>
+
+                  <div className="flex justify-between text-gray-600 print:flex hidden">
+                    <span>Amount Paid</span>
+                    <span>${amountPaid.toFixed(2)}</span>
+                  </div>
+
+                  <div className="flex justify-between text-xl font-bold text-gray-900 pt-2 border-t border-gray-200">
+                    <span>Balance Due</span>
+                    <span className={invoiceBalanceDue <= 0 ? 'text-green-600' : ''}>${invoiceBalanceDue.toFixed(2)}</span>
+                  </div>
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Payment Terms</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1 print:hidden">Notes / Payment Terms</label>
                 <textarea
                   value={invoiceNotes}
                   onChange={e => setInvoiceNotes(e.target.value)}
                   placeholder="e.g. Please pay via bank transfer to..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black outline-none h-24"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black outline-none h-24 print:border-none print:p-0 print:bg-transparent print:resize-none"
                 />
               </div>
 
-              <div className="flex justify-end pt-4">
+              <div className="flex justify-end pt-4 print:hidden">
                 <button
                   onClick={saveInvoice}
                   disabled={isSavingInvoice}
@@ -581,7 +689,7 @@ export default function ProjectDetails({ user }: { user: User }) {
         )}
 
         {activeTab === 'settings' && (
-          <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 p-6 md:p-8">
+          <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-gray-200 p-6 md:p-8 print:hidden">
             <h2 className="text-2xl font-bold text-gray-900 mb-6">Project Settings</h2>
             <form onSubmit={saveSettings} className="space-y-6">
               <div>
