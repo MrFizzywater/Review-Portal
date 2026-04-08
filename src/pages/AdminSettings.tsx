@@ -5,7 +5,6 @@ import { User } from 'firebase/auth';
 import { ArrowLeft, Save, Upload, Image as ImageIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ThemeToggle } from '../components/ThemeToggle';
-import { ThemeToggle } from '../components/ThemeToggle';
 
 const resizeImage = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {

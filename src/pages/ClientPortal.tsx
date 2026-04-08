@@ -4,6 +4,7 @@ import { doc, getDoc, collection, query, where, onSnapshot, addDoc, serverTimest
 import { db } from '../firebase';
 import { Lock, CheckCircle, AlertCircle, ExternalLink, Clock, Send, Upload, X, Plus, FileText, Download, Printer } from 'lucide-react';
 import { format } from 'date-fns';
+import { sendEmail } from '../lib/email';
 
 function getDriveEmbedUrl(url: string) {
   const folderMatch = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
@@ -175,6 +176,30 @@ export default function ClientPortal() {
         });
       }
 
+      if (creatorProfile?.contactEmail) {
+        try {
+          await sendEmail(
+            creatorProfile.contactEmail,
+            `Change Requested: ${project.title}`,
+            `
+              <div style="font-family: sans-serif; max-w: 600px; margin: 0 auto;">
+                <h2>Changes requested for ${project.title}</h2>
+                <p><strong>${reviewerName}</strong> requested a change on Version ${currentVersion.versionNumber}:</p>
+                <blockquote style="border-left: 4px solid #ccc; padding-left: 16px; color: #555;">
+                  ${newChangeText.trim()}
+                </blockquote>
+                <p>Severity: ${isMajorChange ? 'Important Fix' : 'Minor Tweak'}</p>
+                <div style="margin-top: 30px;">
+                  <a href="${window.location.origin}/project/${projectId}" style="background-color: #000; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">View Project</a>
+                </div>
+              </div>
+            `
+          );
+        } catch (emailError) {
+          console.error("Failed to send notification email", emailError);
+        }
+      }
+
       setNewChangeText('');
       setIsMajorChange(false);
     } catch (err) {
@@ -195,6 +220,29 @@ export default function ClientPortal() {
         approvalNotes: clientNotes,
         nextStep: nextStep
       });
+
+      if (creatorProfile?.contactEmail) {
+        try {
+          await sendEmail(
+            creatorProfile.contactEmail,
+            `Project Approved: ${project.title}`,
+            `
+              <div style="font-family: sans-serif; max-w: 600px; margin: 0 auto;">
+                <h2>${project.title} has been approved!</h2>
+                <p><strong>${reviewerName}</strong> approved Version ${currentVersion.versionNumber}.</p>
+                <p><strong>Next Step:</strong> ${nextStep}</p>
+                ${clientNotes ? `<p><strong>Notes:</strong><br/>${clientNotes}</p>` : ''}
+                <div style="margin-top: 30px;">
+                  <a href="${window.location.origin}/project/${projectId}" style="background-color: #000; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">View Project</a>
+                </div>
+              </div>
+            `
+          );
+        } catch (emailError) {
+          console.error("Failed to send notification email", emailError);
+        }
+      }
+
       setIsApproving(false);
     } catch (err) {
       console.error(err);
@@ -243,10 +291,10 @@ export default function ClientPortal() {
   if (!isAuthenticated) {
     return (
       <div 
-        className="min-h-screen flex items-center justify-center"
+        className="min-h-screen flex items-center justify-center dark:bg-gray-900 transition-colors"
         style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}
       >
-        <div className="bg-white p-8 rounded-xl shadow-lg border border-gray-100 text-center max-w-md w-full">
+        <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 text-center max-w-md w-full transition-colors">
           <div className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6 overflow-hidden" style={{ backgroundColor: `rgba(${brandRgb}, 0.1)` }}>
             {creatorProfile?.logoUrl ? (
               <img src={creatorProfile.logoUrl} alt="Logo" className="w-full h-full object-contain p-2" />
@@ -254,8 +302,8 @@ export default function ClientPortal() {
               <Lock className="w-8 h-8" style={{ color: brandColor }} />
             )}
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">{creatorProfile?.displayName || 'Client Portal'}</h1>
-          <p className="text-gray-500 mb-8">Enter your name and the project password to view your project.</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">{creatorProfile?.displayName || 'Client Portal'}</h1>
+          <p className="text-gray-500 dark:text-gray-400 mb-8">Enter your name and the project password to view your project.</p>
           
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
@@ -264,7 +312,7 @@ export default function ClientPortal() {
                 required
                 value={reviewerName}
                 onChange={e => setReviewerName(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 outline-none text-center text-lg bg-gray-50 focus:bg-white transition-colors"
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 outline-none text-center text-lg bg-gray-50 dark:bg-gray-700 focus:bg-white dark:focus:bg-gray-600 dark:text-white transition-colors"
                 style={{ '--tw-ring-color': brandColor } as any}
                 placeholder="Your Name / Initials"
               />
@@ -275,7 +323,7 @@ export default function ClientPortal() {
                 required
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 outline-none text-center text-lg tracking-widest bg-gray-50 focus:bg-white transition-colors"
+                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 outline-none text-center text-lg tracking-widest bg-gray-50 dark:bg-gray-700 focus:bg-white dark:focus:bg-gray-600 dark:text-white transition-colors"
                 style={{ '--tw-ring-color': brandColor } as any}
                 placeholder="••••••••"
               />
@@ -301,22 +349,22 @@ export default function ClientPortal() {
 
   return (
     <div 
-      className="min-h-screen pb-12 print:bg-white print:pb-0"
+      className="min-h-screen pb-12 print:bg-white print:pb-0 dark:bg-gray-900 transition-colors"
       style={{ backgroundColor: `rgba(${brandRgb}, 0.02)` }}
     >
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm print:hidden">
+      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-10 shadow-sm print:hidden transition-colors">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
             {creatorProfile?.logoUrl && (
               <img src={creatorProfile.logoUrl} alt="Logo" className="h-8 w-auto object-contain" />
             )}
             <div>
-              <h1 className="font-bold text-gray-900">{project.title}</h1>
-              <p className="text-xs text-gray-500">Prepared for {project.clientName}</p>
+              <h1 className="font-bold text-gray-900 dark:text-white">{project.title}</h1>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Prepared for {project.clientName}</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm font-medium text-gray-600 hidden sm:inline">Reviewing as: <span className="text-black">{reviewerName}</span></span>
+            <span className="text-sm font-medium text-gray-600 dark:text-gray-300 hidden sm:inline">Reviewing as: <span className="text-black dark:text-white">{reviewerName}</span></span>
             <div 
               className="text-sm font-bold px-3 py-1.5 rounded-lg"
               style={{ backgroundColor: `rgba(${brandRgb}, 0.1)`, color: brandColor }}
@@ -334,8 +382,8 @@ export default function ClientPortal() {
             
             {/* Left Column: Player & Approval */}
             <div className="lg:col-span-2 space-y-6">
-              <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
-                <div className="p-4 border-b border-gray-100 flex justify-between items-center" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors">
+                <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
                   <div>
                     <span 
                       className="text-white font-bold px-3 py-1 rounded-md text-sm inline-block shadow-sm"
@@ -345,13 +393,13 @@ export default function ClientPortal() {
                     </span>
                   </div>
                   {currentVersion.status === 'approved' && (
-                    <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1">
+                    <span className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1">
                       <CheckCircle className="w-4 h-4" /> Approved
                     </span>
                   )}
                 </div>
 
-                <div className="bg-gray-100 relative" style={{ paddingTop: '56.25%' }}>
+                <div className="bg-gray-100 dark:bg-gray-900 relative" style={{ paddingTop: '56.25%' }}>
                   <iframe
                     src={getDriveEmbedUrl(currentVersion.driveLink)}
                     className="absolute top-0 left-0 w-full h-full border-0"
@@ -361,9 +409,9 @@ export default function ClientPortal() {
                 </div>
 
                 {currentVersion.creatorNotes && (
-                  <div className="p-4 border-t border-gray-100" style={{ backgroundColor: `rgba(${brandRgb}, 0.05)` }}>
+                  <div className="p-4 border-t border-gray-100 dark:border-gray-700" style={{ backgroundColor: `rgba(${brandRgb}, 0.05)` }}>
                     <h3 className="text-sm font-bold mb-1" style={{ color: brandColor }}>Notes from Creator:</h3>
-                    <div className="text-sm whitespace-pre-wrap text-gray-800">
+                    <div className="text-sm whitespace-pre-wrap text-gray-800 dark:text-gray-200">
                       {currentVersion.creatorNotes}
                     </div>
                   </div>
@@ -371,12 +419,12 @@ export default function ClientPortal() {
               </div>
 
               {currentVersion.status !== 'approved' && (
-                <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 transition-colors">
                   {!isApproving ? (
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-lg font-bold text-gray-900">Ready to finalize?</h3>
-                        <p className="text-sm text-gray-500">Approve this version if no more changes are needed.</p>
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">Ready to finalize?</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Approve this version if no more changes are needed.</p>
                       </div>
                       <button
                         onClick={() => setIsApproving(true)}
@@ -389,18 +437,18 @@ export default function ClientPortal() {
                   ) : (
                     <div className="space-y-4">
                       <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                          <CheckCircle className="w-5 h-5 text-green-600" /> Approving Version
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                          <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" /> Approving Version
                         </h3>
-                        <button onClick={() => setIsApproving(false)} className="text-sm text-gray-500 hover:text-gray-900 font-medium">Cancel</button>
+                        <button onClick={() => setIsApproving(false)} className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white font-medium">Cancel</button>
                       </div>
                       
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Next Steps</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Next Steps</label>
                         <select
                           value={nextStep}
                           onChange={(e) => setNextStep(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none bg-gray-50 focus:bg-white"
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg outline-none bg-gray-50 dark:bg-gray-700 focus:bg-white dark:focus:bg-gray-600 dark:text-white"
                           style={{ '--tw-ring-color': brandColor } as any}
                         >
                           <option value="post_social">Post to Social Media</option>
@@ -410,11 +458,11 @@ export default function ClientPortal() {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Additional Notes (Optional)</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Additional Notes (Optional)</label>
                         <textarea
                           value={clientNotes}
                           onChange={(e) => setClientNotes(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none h-20 bg-gray-50 focus:bg-white"
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg outline-none h-20 bg-gray-50 dark:bg-gray-700 focus:bg-white dark:focus:bg-gray-600 dark:text-white"
                           style={{ '--tw-ring-color': brandColor } as any}
                           placeholder="Any final thoughts?"
                         />
@@ -436,30 +484,30 @@ export default function ClientPortal() {
 
             {/* Right Column: Change Requests */}
             <div className="space-y-6">
-              <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden flex flex-col h-[600px]">
-                <div className="p-4 border-b border-gray-100" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
-                  <h3 className="font-bold text-gray-900">Requested Changes</h3>
-                  <p className="text-xs text-gray-500">For Version {currentVersion.versionNumber}</p>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col h-[600px] transition-colors">
+                <div className="p-4 border-b border-gray-100 dark:border-gray-700" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
+                  <h3 className="font-bold text-gray-900 dark:text-white">Requested Changes</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">For Version {currentVersion.versionNumber}</p>
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
                   {currentRequests.length === 0 ? (
-                    <p className="text-sm text-gray-500 text-center py-8">No changes requested yet.</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">No changes requested yet.</p>
                   ) : (
                     currentRequests.map(req => (
-                      <div key={req.id} className={`p-3 rounded-lg border ${req.completed ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200 shadow-sm'}`}>
+                      <div key={req.id} className={`p-3 rounded-lg border ${req.completed ? 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-700' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-sm'}`}>
                         <div className="flex justify-between items-start mb-1">
-                          <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${req.isMajor ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'}`}>
+                          <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${req.isMajor ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400'}`}>
                             {req.isMajor ? 'Important Fix' : 'Minor Tweak'}
                           </span>
                           {req.completed && (
-                            <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-green-100 text-green-800 flex items-center gap-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 flex items-center gap-1">
                               <CheckCircle className="w-3 h-3" /> Done
                             </span>
                           )}
                         </div>
-                        <p className={`text-sm mt-1 ${req.completed ? 'text-gray-500 line-through' : 'text-gray-900'}`}>{req.text}</p>
-                        <div className="text-[10px] text-gray-400 mt-2 flex justify-between">
+                        <p className={`text-sm mt-1 ${req.completed ? 'text-gray-500 dark:text-gray-500 line-through' : 'text-gray-900 dark:text-gray-200'}`}>{req.text}</p>
+                        <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-2 flex justify-between">
                           <span>{req.reviewerName}</span>
                           <span>{req.createdAt ? format(req.createdAt.toDate(), 'MMM d, h:mm a') : ''}</span>
                         </div>
@@ -469,23 +517,23 @@ export default function ClientPortal() {
                 </div>
 
                 {currentVersion.status !== 'approved' && (
-                  <div className="p-4 border-t border-gray-100" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
+                  <div className="p-4 border-t border-gray-100 dark:border-gray-700" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
                     <form onSubmit={submitChangeRequest} className="space-y-3">
                       <textarea
                         required
                         value={newChangeText}
                         onChange={e => setNewChangeText(e.target.value)}
                         placeholder="Describe the change needed..."
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none text-sm h-20 resize-none focus:ring-2 bg-white"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg outline-none text-sm h-20 resize-none focus:ring-2 bg-white dark:bg-gray-700 dark:text-white"
                         style={{ '--tw-ring-color': brandColor } as any}
                       />
                       <div className="flex items-center justify-between">
-                        <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
+                        <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
                           <input 
                             type="checkbox" 
                             checked={isMajorChange}
                             onChange={e => setIsMajorChange(e.target.checked)}
-                            className="rounded border-gray-300 text-red-600 focus:ring-red-600"
+                            className="rounded border-gray-300 dark:border-gray-600 text-red-600 focus:ring-red-600 dark:bg-gray-700"
                           />
                           Important Fix
                         </label>
@@ -506,21 +554,21 @@ export default function ClientPortal() {
 
           </div>
         ) : (
-          <div className="text-center py-12 bg-white rounded-xl border border-gray-200 shadow-sm">
-            <p className="text-gray-500">No versions available yet.</p>
+          <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
+            <p className="text-gray-500 dark:text-gray-400">No versions available yet.</p>
           </div>
         )}
 
         {hasInvoice && (
-          <div className="mt-8 bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden print:shadow-none print:border-none print:mt-0">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center print:hidden" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
+          <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden print:shadow-none print:border-none print:mt-0 transition-colors">
+            <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center print:hidden" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-lg" style={{ backgroundColor: `rgba(${brandRgb}, 0.1)`, color: brandColor }}>
                   <FileText className="w-6 h-6" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-gray-900">Project Invoice</h3>
-                  <p className="text-sm text-gray-500">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">Project Invoice</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
                     {project.invoice.status === 'paid' ? 'Paid in full. Thank you!' : `Due by ${project.invoice.dueDate ? format(new Date(project.invoice.dueDate), 'MMM d, yyyy') : 'Receipt'}`}
                   </p>
                 </div>
@@ -528,16 +576,16 @@ export default function ClientPortal() {
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => window.print()}
-                  className="px-3 py-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
+                  className="px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
                 >
                   <Printer className="w-4 h-4" /> Print
                 </button>
                 {project.invoice.status === 'paid' ? (
-                  <span className="bg-green-100 text-green-800 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1">
+                  <span className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1">
                     <CheckCircle className="w-4 h-4" /> Paid
                   </span>
                 ) : (
-                  <span className="bg-yellow-100 text-yellow-800 px-3 py-1.5 rounded-lg text-sm font-bold">
+                  <span className="bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400 px-3 py-1.5 rounded-lg text-sm font-bold">
                     Payment Pending
                   </span>
                 )}
@@ -548,79 +596,79 @@ export default function ClientPortal() {
             <div className="hidden print:block p-8 pb-0">
               <div className="flex justify-between items-start">
                 <div>
-                  <h1 className="text-3xl font-bold text-gray-900 mb-2">INVOICE</h1>
-                  <p className="text-gray-600 font-medium">{project.title}</p>
+                  <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">INVOICE</h1>
+                  <p className="text-gray-600 dark:text-gray-400 font-medium">{project.title}</p>
                 </div>
                 <div className="text-right">
-                  <h2 className="font-bold text-gray-900">{creatorProfile?.displayName || 'Creator'}</h2>
+                  <h2 className="font-bold text-gray-900 dark:text-white">{creatorProfile?.displayName || 'Creator'}</h2>
                   {creatorProfile?.businessAddress && (
-                    <p className="text-sm text-gray-600 whitespace-pre-wrap mt-1">{creatorProfile.businessAddress}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap mt-1">{creatorProfile.businessAddress}</p>
                   )}
                   {creatorProfile?.taxId && (
-                    <p className="text-sm text-gray-600 mt-1">Tax ID: {creatorProfile.taxId}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Tax ID: {creatorProfile.taxId}</p>
                   )}
                 </div>
               </div>
-              <div className="mt-8 flex justify-between border-t border-gray-200 pt-4">
+              <div className="mt-8 flex justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
                 <div>
-                  <p className="text-sm text-gray-500 font-medium">Billed To</p>
-                  <p className="font-bold text-gray-900">{project.clientName}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Billed To</p>
+                  <p className="font-bold text-gray-900 dark:text-white">{project.clientName}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm text-gray-500 font-medium">Due Date</p>
-                  <p className="font-bold text-gray-900">{project.invoice.dueDate ? format(new Date(project.invoice.dueDate), 'MMM d, yyyy') : 'Receipt'}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Due Date</p>
+                  <p className="font-bold text-gray-900 dark:text-white">{project.invoice.dueDate ? format(new Date(project.invoice.dueDate), 'MMM d, yyyy') : 'Receipt'}</p>
                 </div>
               </div>
             </div>
 
             <div className="p-6 print:p-8">
               <div className="space-y-4">
-                <div className="hidden print:flex border-b border-gray-300 pb-2 mb-2 font-bold text-gray-900">
+                <div className="hidden print:flex border-b border-gray-300 dark:border-gray-700 pb-2 mb-2 font-bold text-gray-900 dark:text-white">
                   <div className="flex-1">Description</div>
                   <div className="w-32 text-right">Amount</div>
                 </div>
                 {project.invoice.items.map((item: any, i: number) => (
-                  <div key={i} className="flex justify-between items-center border-b border-gray-100 pb-4 last:border-0 last:pb-0 print:border-b print:border-gray-100 print:py-2">
-                    <span className="text-gray-800 font-medium flex-1">{item.description}</span>
-                    <span className="text-gray-900 font-bold w-32 text-right">${Number(item.amount).toFixed(2)}</span>
+                  <div key={i} className="flex justify-between items-center border-b border-gray-100 dark:border-gray-700 pb-4 last:border-0 last:pb-0 print:border-b print:border-gray-100 print:py-2">
+                    <span className="text-gray-800 dark:text-gray-200 font-medium flex-1">{item.description}</span>
+                    <span className="text-gray-900 dark:text-white font-bold w-32 text-right">${Number(item.amount).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
-              <div className="mt-6 pt-6 border-t border-gray-200 flex justify-end">
+              <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 flex justify-end">
                 <div className="w-64 space-y-2">
-                  <div className="flex justify-between text-gray-600">
+                  <div className="flex justify-between text-gray-600 dark:text-gray-400">
                     <span>Subtotal</span>
                     <span>${Number(project.invoice.subtotal || project.invoice.total).toFixed(2)}</span>
                   </div>
                   {project.invoice.taxRate > 0 && (
-                    <div className="flex justify-between text-gray-600">
+                    <div className="flex justify-between text-gray-600 dark:text-gray-400">
                       <span>Tax ({project.invoice.taxRate}%)</span>
                       <span>${Number(project.invoice.taxAmount).toFixed(2)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between text-lg font-bold text-gray-900 pt-2 border-t border-gray-100">
+                  <div className="flex justify-between text-lg font-bold text-gray-900 dark:text-white pt-2 border-t border-gray-100 dark:border-gray-700">
                     <span>Total</span>
                     <span style={{ color: brandColor }}>${Number(project.invoice.total).toFixed(2)}</span>
                   </div>
                   
                   {project.invoice.amountPaid > 0 && (
-                    <div className="flex justify-between text-gray-600">
+                    <div className="flex justify-between text-gray-600 dark:text-gray-400">
                       <span>Amount Paid</span>
                       <span>${Number(project.invoice.amountPaid).toFixed(2)}</span>
                     </div>
                   )}
 
-                  <div className="flex justify-between text-xl font-bold text-gray-900 pt-2 border-t border-gray-200">
+                  <div className="flex justify-between text-xl font-bold text-gray-900 dark:text-white pt-2 border-t border-gray-200 dark:border-gray-700">
                     <span>Balance Due</span>
-                    <span className={(project.invoice.total - (project.invoice.amountPaid || 0)) <= 0 ? 'text-green-600' : ''}>
+                    <span className={(project.invoice.total - (project.invoice.amountPaid || 0)) <= 0 ? 'text-green-600 dark:text-green-400' : ''}>
                       ${Math.max(0, project.invoice.total - (project.invoice.amountPaid || 0)).toFixed(2)}
                     </span>
                   </div>
                 </div>
               </div>
               {project.invoice.notes && (
-                <div className="mt-8 p-4 rounded-lg bg-gray-50 border border-gray-100 text-sm text-gray-600 whitespace-pre-wrap print:bg-transparent print:border-none print:p-0">
-                  <strong className="block text-gray-900 mb-1">Payment Instructions:</strong>
+                <div className="mt-8 p-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 border border-gray-100 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap print:bg-transparent print:border-none print:p-0">
+                  <strong className="block text-gray-900 dark:text-white mb-1">Payment Instructions:</strong>
                   {project.invoice.notes}
                 </div>
               )}
@@ -628,16 +676,16 @@ export default function ClientPortal() {
           </div>
         )}
 
-        <div className="mt-8 bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden print:hidden">
-          <div className="p-6 border-b border-gray-100 flex justify-between items-center" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
+        <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden print:hidden transition-colors">
+          <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
             <div>
-              <h3 className="text-lg font-bold text-gray-900">Essential Elements</h3>
-              <p className="text-sm text-gray-500">Upload logos, photos, or assets needed for the project.</p>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Essential Elements</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Upload logos, photos, or assets needed for the project.</p>
             </div>
             <button 
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploadingAsset}
-              className="bg-white border border-gray-200 text-gray-900 px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-gray-50 transition-colors shadow-sm"
+              className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm"
             >
               <Upload className="w-4 h-4" />
               {isUploadingAsset ? 'Uploading...' : 'Upload Asset'}
@@ -654,7 +702,7 @@ export default function ClientPortal() {
           {assets.length > 0 && (
             <div className="p-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
               {assets.map(asset => (
-                <div key={asset.id} className="relative group border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                <div key={asset.id} className="relative group border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden shadow-sm">
                   <img src={asset.data} alt={asset.fileName} className="w-full h-32 object-cover" />
                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <button 
@@ -675,13 +723,13 @@ export default function ClientPortal() {
 
         {pastVersions.length > 0 && (
           <div className="mt-8 print:hidden">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Previous Versions</h3>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Previous Versions</h3>
             <div className="space-y-3">
               {pastVersions.map(version => (
-                <div key={version.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
+                <div key={version.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex items-center justify-between transition-colors">
                   <div>
-                    <span className="font-bold text-gray-900 mr-3">Version {version.versionNumber}</span>
-                    <span className="text-sm text-gray-500">
+                    <span className="font-bold text-gray-900 dark:text-white mr-3">Version {version.versionNumber}</span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">
                       {version.createdAt ? format(version.createdAt.toDate(), 'MMM d, yyyy') : ''}
                     </span>
                   </div>
@@ -701,15 +749,15 @@ export default function ClientPortal() {
         )}
 
         {creatorProfile && (creatorProfile.displayName || creatorProfile.bio || creatorProfile.website || creatorProfile.contactEmail) && (
-          <div className="mt-8 bg-white rounded-xl shadow-md border border-gray-200 p-6 print:hidden">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">About the Creator</h3>
+          <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 print:hidden transition-colors">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">About the Creator</h3>
             <div className="flex flex-col sm:flex-row items-start gap-6">
               {creatorProfile.logoUrl && (
-                <img src={creatorProfile.logoUrl} alt="Logo" className="w-16 h-16 rounded-xl object-contain bg-gray-50 border border-gray-100 p-1" />
+                <img src={creatorProfile.logoUrl} alt="Logo" className="w-16 h-16 rounded-xl object-contain bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600 p-1" />
               )}
               <div>
-                {creatorProfile.displayName && <h4 className="font-bold text-gray-900 text-lg">{creatorProfile.displayName}</h4>}
-                {creatorProfile.bio && <p className="text-sm text-gray-600 mt-1 max-w-2xl whitespace-pre-wrap">{creatorProfile.bio}</p>}
+                {creatorProfile.displayName && <h4 className="font-bold text-gray-900 dark:text-white text-lg">{creatorProfile.displayName}</h4>}
+                {creatorProfile.bio && <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 max-w-2xl whitespace-pre-wrap">{creatorProfile.bio}</p>}
                 <div className="flex flex-wrap gap-4 mt-3 text-sm font-bold">
                   {creatorProfile.website && (
                     <a href={creatorProfile.website} target="_blank" rel="noreferrer" style={{ color: brandColor }} className="hover:opacity-80">Website</a>
