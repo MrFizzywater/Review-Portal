@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, onSnapshot, addDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot, addDoc, serverTimestamp, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { User } from 'firebase/auth';
-import { ArrowLeft, Plus, Link as LinkIcon, Eye, CheckCircle, Clock, AlertCircle, ExternalLink, Image as ImageIcon, Settings, FileText, LayoutDashboard, Trash2, Save, Printer, Send } from 'lucide-react';
+import { ArrowLeft, Plus, Link as LinkIcon, Eye, CheckCircle, Clock, AlertCircle, ExternalLink, Image as ImageIcon, Settings, FileText, LayoutDashboard, Trash2, Save, Printer, Send, Edit2, ArrowUp } from 'lucide-react';
 import { format } from 'date-fns';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { sendEmail } from '../lib/email';
@@ -33,6 +33,7 @@ export default function ProjectDetails({ user }: { user: User }) {
   const [changeRequests, setChangeRequests] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
   const [isAddingVersion, setIsAddingVersion] = useState(false);
+  const [editingVersionId, setEditingVersionId] = useState<string | null>(null);
   const [newVersion, setNewVersion] = useState({ driveLink: '', type: 'video', creatorNotes: '', notifyClient: true });
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'invoice' | 'settings'>('overview');
@@ -61,7 +62,7 @@ export default function ProjectDetails({ user }: { user: User }) {
       const docRef = doc(db, 'projects', projectId);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
-        const data = { id: docSnap.id, ...docSnap.data() };
+        const data = { id: docSnap.id, ...docSnap.data() } as any;
         setProject(data);
         setEditForm({ title: data.title || '', clientName: data.clientName || '', clientEmail: data.clientEmail || '', password: data.password || '' });
         
@@ -104,6 +105,23 @@ export default function ProjectDetails({ user }: { user: User }) {
 
   const handleAddVersion = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (editingVersionId) {
+      try {
+        await updateDoc(doc(db, 'versions', editingVersionId), {
+          driveLink: newVersion.driveLink,
+          type: newVersion.type,
+          creatorNotes: newVersion.creatorNotes
+        });
+        setIsAddingVersion(false);
+        setEditingVersionId(null);
+        setNewVersion({ driveLink: '', type: 'video', creatorNotes: '', notifyClient: true });
+      } catch (error) {
+        console.error("Error updating version", error);
+      }
+      return;
+    }
+
     const nextVersionNumber = versions.length > 0 ? versions[0].versionNumber + 1 : 1;
     
     for (const v of versions) {
@@ -275,7 +293,28 @@ export default function ProjectDetails({ user }: { user: User }) {
     setInvoiceItems(invoiceItems.filter((_, i) => i !== index));
   };
 
+  const handleDeleteVersion = async (id: string) => {
+    if (confirm('Are you sure you want to delete this version?')) {
+      try {
+        // If we delete the current version, we should probably make the previous one current
+        const versionToDelete = versions.find(v => v.id === id);
+        await deleteDoc(doc(db, 'versions', id));
+        
+        if (versionToDelete?.isCurrent && versions.length > 1) {
+          const previousVersion = versions.find(v => v.id !== id);
+          if (previousVersion) {
+            await updateDoc(doc(db, 'versions', previousVersion.id), { isCurrent: true });
+          }
+        }
+      } catch (error) {
+        console.error("Error deleting version", error);
+      }
+    }
+  };
+
   const currentVersion = versions.find(v => v.isCurrent);
+  const currentRequests = changeRequests.filter(r => r.versionId === currentVersion?.id);
+  const allChangesCompleted = currentRequests.length > 0 && currentRequests.every(r => r.completed);
 
   if (loading) return <div className="p-8">Loading...</div>;
   if (!project) return <div className="p-8">Project not found</div>;
@@ -338,9 +377,21 @@ export default function ProjectDetails({ user }: { user: User }) {
             {/* Left Column: Versions */}
             <div className="lg:col-span-2 space-y-6">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Versions</h2>
+                <div className="flex items-center gap-4">
+                  <h2 className="text-xl font-bold text-gray-900 dark:text-white">Versions</h2>
+                  {currentVersion?.status === 'changes_requested' && allChangesCompleted && (
+                    <div className="flex items-center gap-2 text-green-600 dark:text-green-400 text-sm font-medium animate-pulse">
+                      <ArrowUp className="w-4 h-4" />
+                      Ready for new version!
+                    </div>
+                  )}
+                </div>
                 <button
-                  onClick={() => setIsAddingVersion(true)}
+                  onClick={() => {
+                    setEditingVersionId(null);
+                    setNewVersion({ driveLink: '', type: 'video', creatorNotes: '', notifyClient: true });
+                    setIsAddingVersion(true);
+                  }}
                   className="bg-black dark:bg-white text-white dark:text-black px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors"
                 >
                   <Plus className="w-4 h-4" />
@@ -350,7 +401,7 @@ export default function ProjectDetails({ user }: { user: User }) {
 
               {isAddingVersion && (
                 <div className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 transition-colors">
-                  <h3 className="font-bold text-gray-900 dark:text-white mb-4">New Version</h3>
+                  <h3 className="font-bold text-gray-900 dark:text-white mb-4">{editingVersionId ? 'Edit Version' : 'New Version'}</h3>
                   <form onSubmit={handleAddVersion} className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Google Drive Link</label>
@@ -383,7 +434,7 @@ export default function ProjectDetails({ user }: { user: User }) {
                         placeholder="What changed in this version?"
                       />
                     </div>
-                    {project.clientEmail && (
+                    {!editingVersionId && project.clientEmail && (
                       <div>
                         <label className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
                           <input 
@@ -397,8 +448,11 @@ export default function ProjectDetails({ user }: { user: User }) {
                       </div>
                     )}
                     <div className="flex justify-end gap-2">
-                      <button type="button" onClick={() => setIsAddingVersion(false)} className="px-3 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">Cancel</button>
-                      <button type="submit" className="px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors">Upload Version</button>
+                      <button type="button" onClick={() => {
+                        setIsAddingVersion(false);
+                        setEditingVersionId(null);
+                      }} className="px-3 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">Cancel</button>
+                      <button type="submit" className="px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors">{editingVersionId ? 'Save Changes' : 'Upload Version'}</button>
                     </div>
                   </form>
                 </div>
@@ -420,7 +474,32 @@ export default function ProjectDetails({ user }: { user: User }) {
                     <div className="flex items-center gap-2">
                       {currentVersion.status === 'pending' && <span className="text-yellow-600 dark:text-yellow-500 text-sm flex items-center gap-1"><Eye className="w-4 h-4"/> Pending Review</span>}
                       {currentVersion.status === 'approved' && <span className="text-green-600 dark:text-green-400 text-sm flex items-center gap-1"><CheckCircle className="w-4 h-4"/> Approved</span>}
-                      {currentVersion.status === 'changes_requested' && <span className="text-red-600 dark:text-red-400 text-sm flex items-center gap-1"><AlertCircle className="w-4 h-4"/> Changes Requested</span>}
+                      {currentVersion.status === 'changes_requested' && !allChangesCompleted && <span className="text-red-600 dark:text-red-400 text-sm flex items-center gap-1"><AlertCircle className="w-4 h-4"/> Changes Requested</span>}
+                      {currentVersion.status === 'changes_requested' && allChangesCompleted && <span className="text-green-600 dark:text-green-400 text-sm flex items-center gap-1"><CheckCircle className="w-4 h-4"/> Changes Complete</span>}
+                      
+                      <div className="flex gap-1 ml-2 border-l border-gray-200 dark:border-gray-700 pl-2">
+                        <button 
+                          onClick={() => {
+                            setEditingVersionId(currentVersion.id);
+                            setNewVersion({
+                              driveLink: currentVersion.driveLink,
+                              type: currentVersion.type || 'video',
+                              creatorNotes: currentVersion.creatorNotes || '',
+                              notifyClient: false
+                            });
+                            setIsAddingVersion(true);
+                          }}
+                          className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteVersion(currentVersion.id)}
+                          className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                   
@@ -459,6 +538,30 @@ export default function ProjectDetails({ user }: { user: User }) {
                         {version.status === 'pending' && <span className="text-yellow-600 dark:text-yellow-500 text-sm flex items-center gap-1"><Eye className="w-4 h-4"/> Pending Review</span>}
                         {version.status === 'approved' && <span className="text-green-600 dark:text-green-400 text-sm flex items-center gap-1"><CheckCircle className="w-4 h-4"/> Approved</span>}
                         {version.status === 'changes_requested' && <span className="text-red-600 dark:text-red-400 text-sm flex items-center gap-1"><AlertCircle className="w-4 h-4"/> Changes Requested</span>}
+                        
+                        <div className="flex gap-1 ml-2 border-l border-gray-200 dark:border-gray-700 pl-2">
+                          <button 
+                            onClick={() => {
+                              setEditingVersionId(version.id);
+                              setNewVersion({
+                                driveLink: version.driveLink,
+                                type: version.type || 'video',
+                                creatorNotes: version.creatorNotes || '',
+                                notifyClient: false
+                              });
+                              setIsAddingVersion(true);
+                            }}
+                            className="p-1 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteVersion(version.id)}
+                            className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                     
