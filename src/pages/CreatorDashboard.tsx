@@ -20,9 +20,17 @@ interface Project {
 interface Client {
   id: string;
   name: string;
+  company?: string;
+  contactPerson?: string;
   email: string;
   phone: string;
-  address: string;
+  address?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  country?: string;
+  url?: string;
   logoUrl: string;
   creatorId: string;
   createdAt: any;
@@ -38,7 +46,10 @@ export default function CreatorDashboard({ user }: { user: User }) {
 
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [clientForm, setClientForm] = useState({ name: '', email: '', phone: '', address: '', logoUrl: '' });
+  const [clientForm, setClientForm] = useState({ 
+    name: '', company: '', contactPerson: '', email: '', phone: '', 
+    address: '', street: '', city: '', state: '', zip: '', country: '', url: '', logoUrl: '' 
+  });
 
   useEffect(() => {
     const qProjects = query(collection(db, 'projects'), where('creatorId', '==', user.uid));
@@ -95,7 +106,10 @@ export default function CreatorDashboard({ user }: { user: User }) {
       }
       setIsCreatingClient(false);
       setEditingClient(null);
-      setClientForm({ name: '', email: '', phone: '', address: '', logoUrl: '' });
+      setClientForm({ 
+        name: '', company: '', contactPerson: '', email: '', phone: '', 
+        address: '', street: '', city: '', state: '', zip: '', country: '', url: '', logoUrl: '' 
+      });
     } catch (error) {
       console.error("Error saving client", error);
       alert("Failed to save client");
@@ -354,6 +368,24 @@ export default function CreatorDashboard({ user }: { user: User }) {
                       />
                     </div>
                     <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Company Name</label>
+                      <input
+                        type="text"
+                        value={clientForm.company}
+                        onChange={e => setClientForm({...clientForm, company: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent outline-none dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Contact Person</label>
+                      <input
+                        type="text"
+                        value={clientForm.contactPerson}
+                        onChange={e => setClientForm({...clientForm, contactPerson: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent outline-none dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
                       <input
                         type="email"
@@ -372,11 +404,57 @@ export default function CreatorDashboard({ user }: { user: User }) {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Address</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Website URL</label>
+                      <input
+                        type="url"
+                        value={clientForm.url}
+                        onChange={e => setClientForm({...clientForm, url: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent outline-none dark:bg-gray-700 dark:text-white"
+                        placeholder="https://..."
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Street Address</label>
                       <input
                         type="text"
-                        value={clientForm.address}
-                        onChange={e => setClientForm({...clientForm, address: e.target.value})}
+                        value={clientForm.street}
+                        onChange={e => setClientForm({...clientForm, street: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent outline-none dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">City</label>
+                      <input
+                        type="text"
+                        value={clientForm.city}
+                        onChange={e => setClientForm({...clientForm, city: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent outline-none dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">State / Province</label>
+                      <input
+                        type="text"
+                        value={clientForm.state}
+                        onChange={e => setClientForm({...clientForm, state: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent outline-none dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">ZIP / Postal Code</label>
+                      <input
+                        type="text"
+                        value={clientForm.zip}
+                        onChange={e => setClientForm({...clientForm, zip: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent outline-none dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
+                      <input
+                        type="text"
+                        value={clientForm.country}
+                        onChange={e => setClientForm({...clientForm, country: e.target.value})}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent outline-none dark:bg-gray-700 dark:text-white"
                       />
                     </div>
@@ -433,9 +511,17 @@ export default function CreatorDashboard({ user }: { user: User }) {
                           setEditingClient(client);
                           setClientForm({
                             name: client.name,
+                            company: client.company || '',
+                            contactPerson: client.contactPerson || '',
                             email: client.email || '',
                             phone: client.phone || '',
                             address: client.address || '',
+                            street: client.street || '',
+                            city: client.city || '',
+                            state: client.state || '',
+                            zip: client.zip || '',
+                            country: client.country || '',
+                            url: client.url || '',
                             logoUrl: client.logoUrl || ''
                           });
                           setIsCreatingClient(true);
@@ -454,9 +540,20 @@ export default function CreatorDashboard({ user }: { user: User }) {
                   </div>
                   <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-2">{client.name}</h3>
                   <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
+                    {client.company && <p className="font-medium text-gray-800 dark:text-gray-300">{client.company}</p>}
+                    {client.contactPerson && <p>Contact: {client.contactPerson}</p>}
                     {client.email && <p>{client.email}</p>}
                     {client.phone && <p>{client.phone}</p>}
-                    {client.address && <p>{client.address}</p>}
+                    {client.url && <p><a href={client.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{client.url}</a></p>}
+                    {(client.street || client.city || client.state || client.zip || client.country) ? (
+                      <div className="mt-2 text-gray-500 dark:text-gray-500">
+                        {client.street && <p>{client.street}</p>}
+                        <p>
+                          {[client.city, client.state, client.zip].filter(Boolean).join(', ')}
+                        </p>
+                        {client.country && <p>{client.country}</p>}
+                      </div>
+                    ) : client.address && <p>{client.address}</p>}
                   </div>
                   <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
                     <button

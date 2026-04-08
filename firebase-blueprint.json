@@ -87,6 +87,29 @@
         "createdAt": { "type": "timestamp" }
       },
       "required": ["projectId", "versionId", "text", "isMajor", "reviewerName", "completed", "createdAt"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "A client of the creator.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "company": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "street": { "type": "string" },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "zip": { "type": "string" },
+        "country": { "type": "string" },
+        "url": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "creatorId": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["name", "creatorId", "createdAt"]
     }
   },
   "firestore": {
@@ -113,6 +136,10 @@
     "change_requests/{requestId}": {
       "schema": "ChangeRequest",
       "description": "Stores individual change requests."
+    },
+    "clients/{clientId}": {
+      "schema": "Client",
+      "description": "Stores clients for creators."
     }
   }
 }
