@@ -37,14 +37,18 @@ export default function App() {
 }
 
 function Login() {
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const handleLogin = async () => {
+    setErrorMsg(null);
     const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
     const { auth, googleProvider } = await import('./firebase');
     try {
       await signInWithPopup(auth, googleProvider);
       window.location.href = '/';
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login failed", error);
+      setErrorMsg(error.message || "An unknown error occurred during login.");
     }
   };
 
@@ -53,6 +57,14 @@ function Login() {
       <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 text-center max-w-md w-full">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Creator Login</h1>
         <p className="text-gray-500 mb-6">Sign in to manage your client review portals.</p>
+        
+        {errorMsg && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg text-left break-words">
+            <strong>Login Error:</strong><br/>
+            {errorMsg}
+          </div>
+        )}
+
         <button
           onClick={handleLogin}
           className="w-full bg-black text-white rounded-lg py-3 font-medium hover:bg-gray-800 transition-colors"
