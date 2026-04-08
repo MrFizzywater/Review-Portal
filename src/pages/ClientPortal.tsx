@@ -4,16 +4,25 @@ import { doc, getDoc, collection, query, where, onSnapshot, addDoc, serverTimest
 import { db } from '../firebase';
 import { Lock, CheckCircle, AlertCircle, ExternalLink, Clock, Send, Upload, X, Plus, FileText, Download, Printer } from 'lucide-react';
 import { format } from 'date-fns';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { sendEmail } from '../lib/email';
 
 function getDriveEmbedUrl(url: string) {
-  const folderMatch = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
-  if (folderMatch && folderMatch[1]) {
-    return `https://drive.google.com/embeddedfolderview?id=${folderMatch[1]}#grid`;
-  }
-  const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
-  if (match && match[1]) {
-    return `https://drive.google.com/file/d/${match[1]}/preview`;
+  if (!url) return '';
+  try {
+    const urlObj = new URL(url);
+    if (urlObj.hostname.includes('drive.google.com')) {
+      const folderMatch = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+      if (folderMatch && folderMatch[1]) {
+        return `https://drive.google.com/embeddedfolderview?id=${folderMatch[1]}#grid`;
+      }
+      const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        return `https://drive.google.com/file/d/${match[1]}/preview`;
+      }
+    }
+  } catch (e) {
+    // Ignore invalid URLs
   }
   return url;
 }
@@ -368,6 +377,7 @@ export default function ClientPortal() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <ThemeToggle />
             <span className="text-sm font-medium text-gray-600 dark:text-gray-300 hidden sm:inline">Reviewing as: <span className="text-black dark:text-white">{reviewerName}</span></span>
             <div 
               className="text-sm font-bold px-3 py-1.5 rounded-lg"

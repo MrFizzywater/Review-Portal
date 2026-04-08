@@ -15,6 +15,7 @@ interface Project {
   maxRevisions: number;
   password?: string;
   status?: 'active' | 'archived';
+  invoice?: any;
   createdAt: any;
 }
 
@@ -43,7 +44,7 @@ export default function CreatorDashboard({ user }: { user: User }) {
   const [clients, setClients] = useState<Client[]>([]);
   
   const [isCreatingProject, setIsCreatingProject] = useState(false);
-  const [newProject, setNewProject] = useState({ title: '', clientId: '', clientName: '', password: '', maxRevisions: 3 });
+  const [newProject, setNewProject] = useState<any>({ title: '', clientId: '', clientName: '', password: '', maxRevisions: 3 });
 
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
@@ -186,7 +187,8 @@ export default function CreatorDashboard({ user }: { user: User }) {
       clientId: project.clientId || '',
       clientName: project.clientName || '',
       password: project.password || '',
-      maxRevisions: project.maxRevisions || 3
+      maxRevisions: project.maxRevisions || 3,
+      invoice: project.invoice || null
     });
     setIsCreatingProject(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });

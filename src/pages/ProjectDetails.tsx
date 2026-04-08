@@ -9,13 +9,21 @@ import { ThemeToggle } from '../components/ThemeToggle';
 import { sendEmail } from '../lib/email';
 
 function getDriveEmbedUrl(url: string) {
-  const folderMatch = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
-  if (folderMatch && folderMatch[1]) {
-    return `https://drive.google.com/embeddedfolderview?id=${folderMatch[1]}#grid`;
-  }
-  const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
-  if (match && match[1]) {
-    return `https://drive.google.com/file/d/${match[1]}/preview`;
+  if (!url) return '';
+  try {
+    const urlObj = new URL(url);
+    if (urlObj.hostname.includes('drive.google.com')) {
+      const folderMatch = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+      if (folderMatch && folderMatch[1]) {
+        return `https://drive.google.com/embeddedfolderview?id=${folderMatch[1]}#grid`;
+      }
+      const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
+      if (match && match[1]) {
+        return `https://drive.google.com/file/d/${match[1]}/preview`;
+      }
+    }
+  } catch (e) {
+    // Ignore invalid URLs
   }
   return url;
 }
@@ -33,6 +41,7 @@ export default function ProjectDetails({ user }: { user: User }) {
   const [versions, setVersions] = useState<any[]>([]);
   const [changeRequests, setChangeRequests] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
+  const [clients, setClients] = useState<any[]>([]);
   const [isAddingVersion, setIsAddingVersion] = useState(false);
   const [editingVersionId, setEditingVersionId] = useState<string | null>(null);
   const [newVersion, setNewVersion] = useState({ driveLink: '', type: 'video', creatorNotes: '', notifyClient: true });
@@ -40,7 +49,7 @@ export default function ProjectDetails({ user }: { user: User }) {
   const [activeTab, setActiveTab] = useState<'overview' | 'invoice' | 'settings'>('overview');
 
   // Settings State
-  const [editForm, setEditForm] = useState({ title: '', clientName: '', clientEmail: '', password: '' });
+  const [editForm, setEditForm] = useState({ title: '', clientName: '', clientEmail: '', password: '', clientId: '' });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   // Invoice State
@@ -65,7 +74,7 @@ export default function ProjectDetails({ user }: { user: User }) {
       if (docSnap.exists()) {
         const data = { id: docSnap.id, ...docSnap.data() } as any;
         setProject(data);
-        setEditForm({ title: data.title || '', clientName: data.clientName || '', clientEmail: data.clientEmail || '', password: data.password || '' });
+        setEditForm({ title: data.title || '', clientName: data.clientName || '', clientEmail: data.clientEmail || '', password: data.password || '', clientId: data.clientId || '' });
         
         if (data.clientId) {
           const clientDoc = await getDoc(doc(db, 'clients', data.clientId));
@@ -104,10 +113,16 @@ export default function ProjectDetails({ user }: { user: User }) {
       setAssets(aData.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis()));
     });
 
+    const qClients = query(collection(db, 'clients'), where('creatorId', '==', user.uid));
+    const unsubClients = onSnapshot(qClients, (snapshot) => {
+      setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
     return () => {
       unsubVersions();
       unsubRequests();
       unsubAssets();
+      unsubClients();
     };
   }, [projectId]);
 
@@ -201,13 +216,29 @@ export default function ProjectDetails({ user }: { user: User }) {
     e.preventDefault();
     setIsSavingSettings(true);
     try {
+      const selectedClient = clients.find(c => c.id === editForm.clientId);
+      const finalClientName = selectedClient ? selectedClient.name : editForm.clientName;
+      const finalClientEmail = selectedClient ? selectedClient.email : editForm.clientEmail;
+
       await updateDoc(doc(db, 'projects', projectId!), {
         title: editForm.title,
-        clientName: editForm.clientName,
-        clientEmail: editForm.clientEmail,
+        clientId: editForm.clientId,
+        clientName: finalClientName,
+        clientEmail: finalClientEmail,
         password: editForm.password
       });
-      setProject({ ...project, ...editForm });
+      
+      setProject({ ...project, title: editForm.title, clientId: editForm.clientId, clientName: finalClientName, clientEmail: finalClientEmail, password: editForm.password });
+      
+      if (editForm.clientId !== project.clientId) {
+         if (editForm.clientId) {
+           const clientDoc = await getDoc(doc(db, 'clients', editForm.clientId));
+           if (clientDoc.exists()) setClientDetails({ id: clientDoc.id, ...clientDoc.data() });
+         } else {
+           setClientDetails(null);
+         }
+      }
+
       alert('Settings saved successfully');
     } catch (error) {
       console.error("Error saving settings", error);
@@ -911,25 +942,40 @@ export default function ProjectDetails({ user }: { user: User }) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Client Name</label>
-                <input
-                  type="text"
-                  required
-                  value={editForm.clientName}
-                  onChange={e => setEditForm({...editForm, clientName: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none dark:bg-gray-700 dark:text-white"
-                />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Client</label>
+                <select
+                  value={editForm.clientId}
+                  onChange={e => setEditForm({...editForm, clientId: e.target.value, clientName: ''})}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none dark:bg-gray-700 dark:text-white mb-2"
+                >
+                  <option value="">Select a client...</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                {!editForm.clientId && (
+                  <input
+                    type="text"
+                    required={!editForm.clientId}
+                    value={editForm.clientName}
+                    onChange={e => setEditForm({...editForm, clientName: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none dark:bg-gray-700 dark:text-white"
+                    placeholder="Or type new client name"
+                  />
+                )}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Client Email (for notifications)</label>
-                <input
-                  type="email"
-                  value={editForm.clientEmail}
-                  onChange={e => setEditForm({...editForm, clientEmail: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none dark:bg-gray-700 dark:text-white"
-                  placeholder="client@example.com"
-                />
-              </div>
+              {!editForm.clientId && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Client Email (for notifications)</label>
+                  <input
+                    type="email"
+                    value={editForm.clientEmail}
+                    onChange={e => setEditForm({...editForm, clientEmail: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none dark:bg-gray-700 dark:text-white"
+                    placeholder="client@example.com"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Client Password</label>
                 <div className="relative">
