@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, onSnapshot, addDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Lock, CheckCircle, AlertCircle, ExternalLink, Clock, Send, Upload, X, Plus } from 'lucide-react';
+import { Lock, CheckCircle, AlertCircle, ExternalLink, Clock, Send, Upload, X, Plus, FileText, Download } from 'lucide-react';
 import { format } from 'date-fns';
 
 function getDriveEmbedUrl(url: string) {
@@ -15,6 +15,11 @@ function getDriveEmbedUrl(url: string) {
     return `https://drive.google.com/file/d/${match[1]}/preview`;
   }
   return url;
+}
+
+function hexToRgb(hex: string) {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}` : '0, 0, 0';
 }
 
 const resizeImage = (file: File): Promise<string> => {
@@ -146,6 +151,7 @@ export default function ClientPortal() {
   const currentVersion = versions.find(v => v.isCurrent);
   const currentRequests = changeRequests.filter(r => r.versionId === currentVersion?.id);
   const brandColor = creatorProfile?.brandColor || '#000000';
+  const brandRgb = hexToRgb(brandColor);
 
   const submitChangeRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -236,17 +242,20 @@ export default function ClientPortal() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 text-center max-w-md w-full">
-          <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4 overflow-hidden">
+      <div 
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}
+      >
+        <div className="bg-white p-8 rounded-xl shadow-lg border border-gray-100 text-center max-w-md w-full">
+          <div className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6 overflow-hidden" style={{ backgroundColor: `rgba(${brandRgb}, 0.1)` }}>
             {creatorProfile?.logoUrl ? (
-              <img src={creatorProfile.logoUrl} alt="Logo" className="w-full h-full object-contain p-1" />
+              <img src={creatorProfile.logoUrl} alt="Logo" className="w-full h-full object-contain p-2" />
             ) : (
-              <Lock className="w-6 h-6 text-gray-600" />
+              <Lock className="w-8 h-8" style={{ color: brandColor }} />
             )}
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">{creatorProfile?.displayName || 'Client Portal'}</h1>
-          <p className="text-gray-500 mb-6">Enter your name and the project password to view your project.</p>
+          <p className="text-gray-500 mb-8">Enter your name and the project password to view your project.</p>
           
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
@@ -255,7 +264,7 @@ export default function ClientPortal() {
                 required
                 value={reviewerName}
                 onChange={e => setReviewerName(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 outline-none text-center text-lg"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 outline-none text-center text-lg bg-gray-50 focus:bg-white transition-colors"
                 style={{ '--tw-ring-color': brandColor } as any}
                 placeholder="Your Name / Initials"
               />
@@ -266,16 +275,16 @@ export default function ClientPortal() {
                 required
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 outline-none text-center text-lg tracking-widest"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 outline-none text-center text-lg tracking-widest bg-gray-50 focus:bg-white transition-colors"
                 style={{ '--tw-ring-color': brandColor } as any}
                 placeholder="••••••••"
               />
             </div>
-            {error && <p className="text-red-500 text-sm">{error}</p>}
+            {error && <p className="text-red-500 text-sm font-medium">{error}</p>}
             <button
               type="submit"
               style={{ backgroundColor: brandColor }}
-              className="w-full text-white rounded-lg py-3 font-medium hover:opacity-90 transition-opacity"
+              className="w-full text-white rounded-lg py-3.5 font-bold text-lg hover:opacity-90 transition-opacity shadow-md mt-2"
             >
               Access Project
             </button>
@@ -288,10 +297,14 @@ export default function ClientPortal() {
   const pastVersions = versions.filter(v => !v.isCurrent);
   const revisionsUsed = versions.length > 0 ? versions.length - 1 : 0;
   const revisionsLeft = project.maxRevisions - revisionsUsed;
+  const hasInvoice = project.invoice && project.invoice.status !== 'draft';
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-12">
-      <header className="bg-white border-b border-gray-200">
+    <div 
+      className="min-h-screen pb-12"
+      style={{ backgroundColor: `rgba(${brandRgb}, 0.02)` }}
+    >
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
             {creatorProfile?.logoUrl && (
@@ -304,7 +317,10 @@ export default function ClientPortal() {
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium text-gray-600 hidden sm:inline">Reviewing as: <span className="text-black">{reviewerName}</span></span>
-            <div className="text-sm font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">
+            <div 
+              className="text-sm font-bold px-3 py-1.5 rounded-lg"
+              style={{ backgroundColor: `rgba(${brandRgb}, 0.1)`, color: brandColor }}
+            >
               {revisionsLeft} revisions remaining
             </div>
           </div>
@@ -318,18 +334,18 @@ export default function ClientPortal() {
             
             {/* Left Column: Player & Approval */}
             <div className="lg:col-span-2 space-y-6">
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+                <div className="p-4 border-b border-gray-100 flex justify-between items-center" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
                   <div>
                     <span 
-                      className="text-white font-bold px-3 py-1 rounded-md text-sm inline-block"
+                      className="text-white font-bold px-3 py-1 rounded-md text-sm inline-block shadow-sm"
                       style={{ backgroundColor: brandColor }}
                     >
                       Current Version (v{currentVersion.versionNumber})
                     </span>
                   </div>
                   {currentVersion.status === 'approved' && (
-                    <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium flex items-center gap-1">
+                    <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1">
                       <CheckCircle className="w-4 h-4" /> Approved
                     </span>
                   )}
@@ -345,9 +361,9 @@ export default function ClientPortal() {
                 </div>
 
                 {currentVersion.creatorNotes && (
-                  <div className="p-4 bg-blue-50 border-t border-blue-100">
-                    <h3 className="text-sm font-bold text-blue-900 mb-1">Notes from Creator:</h3>
-                    <div className="text-sm text-blue-800 whitespace-pre-wrap">
+                  <div className="p-4 border-t border-gray-100" style={{ backgroundColor: `rgba(${brandRgb}, 0.05)` }}>
+                    <h3 className="text-sm font-bold mb-1" style={{ color: brandColor }}>Notes from Creator:</h3>
+                    <div className="text-sm whitespace-pre-wrap text-gray-800">
                       {currentVersion.creatorNotes}
                     </div>
                   </div>
@@ -355,7 +371,7 @@ export default function ClientPortal() {
               </div>
 
               {currentVersion.status !== 'approved' && (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6">
                   {!isApproving ? (
                     <div className="flex items-center justify-between">
                       <div>
@@ -364,7 +380,7 @@ export default function ClientPortal() {
                       </div>
                       <button
                         onClick={() => setIsApproving(true)}
-                        className="bg-green-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center gap-2"
+                        className="bg-green-600 text-white px-6 py-2.5 rounded-lg font-bold hover:bg-green-700 transition-colors flex items-center gap-2 shadow-sm"
                       >
                         <CheckCircle className="w-5 h-5" />
                         Approve Project
@@ -376,7 +392,7 @@ export default function ClientPortal() {
                         <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                           <CheckCircle className="w-5 h-5 text-green-600" /> Approving Version
                         </h3>
-                        <button onClick={() => setIsApproving(false)} className="text-sm text-gray-500 hover:text-gray-900">Cancel</button>
+                        <button onClick={() => setIsApproving(false)} className="text-sm text-gray-500 hover:text-gray-900 font-medium">Cancel</button>
                       </div>
                       
                       <div>
@@ -384,7 +400,7 @@ export default function ClientPortal() {
                         <select
                           value={nextStep}
                           onChange={(e) => setNextStep(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none bg-gray-50 focus:bg-white"
                           style={{ '--tw-ring-color': brandColor } as any}
                         >
                           <option value="post_social">Post to Social Media</option>
@@ -398,7 +414,7 @@ export default function ClientPortal() {
                         <textarea
                           value={clientNotes}
                           onChange={(e) => setClientNotes(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none h-20"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none h-20 bg-gray-50 focus:bg-white"
                           style={{ '--tw-ring-color': brandColor } as any}
                           placeholder="Any final thoughts?"
                         />
@@ -407,7 +423,7 @@ export default function ClientPortal() {
                       <button
                         onClick={submitApproval}
                         disabled={isSubmitting}
-                        className="w-full bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                        className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-2 shadow-md"
                       >
                         <CheckCircle className="w-5 h-5" />
                         {isSubmitting ? 'Approving...' : 'Confirm Approval'}
@@ -420,8 +436,8 @@ export default function ClientPortal() {
 
             {/* Right Column: Change Requests */}
             <div className="space-y-6">
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[600px]">
-                <div className="p-4 border-b border-gray-100 bg-gray-50">
+              <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden flex flex-col h-[600px]">
+                <div className="p-4 border-b border-gray-100" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
                   <h3 className="font-bold text-gray-900">Requested Changes</h3>
                   <p className="text-xs text-gray-500">For Version {currentVersion.versionNumber}</p>
                 </div>
@@ -453,18 +469,18 @@ export default function ClientPortal() {
                 </div>
 
                 {currentVersion.status !== 'approved' && (
-                  <div className="p-4 border-t border-gray-100 bg-gray-50">
+                  <div className="p-4 border-t border-gray-100" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
                     <form onSubmit={submitChangeRequest} className="space-y-3">
                       <textarea
                         required
                         value={newChangeText}
                         onChange={e => setNewChangeText(e.target.value)}
                         placeholder="Describe the change needed..."
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none text-sm h-20 resize-none focus:ring-2"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none text-sm h-20 resize-none focus:ring-2 bg-white"
                         style={{ '--tw-ring-color': brandColor } as any}
                       />
                       <div className="flex items-center justify-between">
-                        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                        <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
                           <input 
                             type="checkbox" 
                             checked={isMajorChange}
@@ -477,7 +493,7 @@ export default function ClientPortal() {
                           type="submit"
                           disabled={isSubmitting || !newChangeText.trim()}
                           style={{ backgroundColor: brandColor }}
-                          className="text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity flex items-center gap-1"
+                          className="text-white px-4 py-2 rounded-lg text-sm font-bold hover:opacity-90 disabled:opacity-50 transition-opacity flex items-center gap-1 shadow-sm"
                         >
                           <Plus className="w-4 h-4" /> Add
                         </button>
@@ -490,13 +506,60 @@ export default function ClientPortal() {
 
           </div>
         ) : (
-          <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
+          <div className="text-center py-12 bg-white rounded-xl border border-gray-200 shadow-sm">
             <p className="text-gray-500">No versions available yet.</p>
           </div>
         )}
 
-        <div className="mt-8 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="p-6 border-b border-gray-100 flex justify-between items-center">
+        {hasInvoice && (
+          <div className="mt-8 bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg" style={{ backgroundColor: `rgba(${brandRgb}, 0.1)`, color: brandColor }}>
+                  <FileText className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Project Invoice</h3>
+                  <p className="text-sm text-gray-500">
+                    {project.invoice.status === 'paid' ? 'Paid in full. Thank you!' : `Due by ${project.invoice.dueDate ? format(new Date(project.invoice.dueDate), 'MMM d, yyyy') : 'Receipt'}`}
+                  </p>
+                </div>
+              </div>
+              {project.invoice.status === 'paid' ? (
+                <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1">
+                  <CheckCircle className="w-4 h-4" /> Paid
+                </span>
+              ) : (
+                <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-bold">
+                  Payment Pending
+                </span>
+              )}
+            </div>
+            <div className="p-6">
+              <div className="space-y-4">
+                {project.invoice.items.map((item: any, i: number) => (
+                  <div key={i} className="flex justify-between items-center border-b border-gray-100 pb-4 last:border-0 last:pb-0">
+                    <span className="text-gray-800 font-medium">{item.description}</span>
+                    <span className="text-gray-900 font-bold">${Number(item.amount).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6 pt-6 border-t border-gray-200 flex justify-between items-center">
+                <span className="text-gray-500 font-medium">Total Amount Due</span>
+                <span className="text-3xl font-bold" style={{ color: brandColor }}>${Number(project.invoice.total).toFixed(2)}</span>
+              </div>
+              {project.invoice.notes && (
+                <div className="mt-6 p-4 rounded-lg bg-gray-50 border border-gray-100 text-sm text-gray-600 whitespace-pre-wrap">
+                  <strong className="block text-gray-900 mb-1">Payment Instructions:</strong>
+                  {project.invoice.notes}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-8 bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+          <div className="p-6 border-b border-gray-100 flex justify-between items-center" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
             <div>
               <h3 className="text-lg font-bold text-gray-900">Essential Elements</h3>
               <p className="text-sm text-gray-500">Upload logos, photos, or assets needed for the project.</p>
@@ -504,7 +567,7 @@ export default function ClientPortal() {
             <button 
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploadingAsset}
-              className="bg-gray-100 text-gray-900 px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:bg-gray-200 transition-colors"
+              className="bg-white border border-gray-200 text-gray-900 px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-gray-50 transition-colors shadow-sm"
             >
               <Upload className="w-4 h-4" />
               {isUploadingAsset ? 'Uploading...' : 'Upload Asset'}
@@ -521,7 +584,7 @@ export default function ClientPortal() {
           {assets.length > 0 && (
             <div className="p-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
               {assets.map(asset => (
-                <div key={asset.id} className="relative group border border-gray-200 rounded-lg overflow-hidden">
+                <div key={asset.id} className="relative group border border-gray-200 rounded-lg overflow-hidden shadow-sm">
                   <img src={asset.data} alt={asset.fileName} className="w-full h-32 object-cover" />
                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <button 
@@ -545,9 +608,9 @@ export default function ClientPortal() {
             <h3 className="text-lg font-bold text-gray-900 mb-4">Previous Versions</h3>
             <div className="space-y-3">
               {pastVersions.map(version => (
-                <div key={version.id} className="bg-white p-4 rounded-xl border border-gray-200 flex items-center justify-between">
+                <div key={version.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between">
                   <div>
-                    <span className="font-medium text-gray-900 mr-3">Version {version.versionNumber}</span>
+                    <span className="font-bold text-gray-900 mr-3">Version {version.versionNumber}</span>
                     <span className="text-sm text-gray-500">
                       {version.createdAt ? format(version.createdAt.toDate(), 'MMM d, yyyy') : ''}
                     </span>
@@ -556,7 +619,8 @@ export default function ClientPortal() {
                     href={getDriveEmbedUrl(version.driveLink)} 
                     target="_blank" 
                     rel="noreferrer"
-                    className="text-sm text-blue-600 hover:underline font-medium"
+                    className="text-sm hover:underline font-bold"
+                    style={{ color: brandColor }}
                   >
                     View Reference
                   </a>
@@ -567,7 +631,7 @@ export default function ClientPortal() {
         )}
 
         {creatorProfile && (creatorProfile.displayName || creatorProfile.bio || creatorProfile.website || creatorProfile.contactEmail) && (
-          <div className="mt-8 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="mt-8 bg-white rounded-xl shadow-md border border-gray-200 p-6">
             <h3 className="text-lg font-bold text-gray-900 mb-4">About the Creator</h3>
             <div className="flex flex-col sm:flex-row items-start gap-6">
               {creatorProfile.logoUrl && (
@@ -576,7 +640,7 @@ export default function ClientPortal() {
               <div>
                 {creatorProfile.displayName && <h4 className="font-bold text-gray-900 text-lg">{creatorProfile.displayName}</h4>}
                 {creatorProfile.bio && <p className="text-sm text-gray-600 mt-1 max-w-2xl whitespace-pre-wrap">{creatorProfile.bio}</p>}
-                <div className="flex flex-wrap gap-4 mt-3 text-sm font-medium">
+                <div className="flex flex-wrap gap-4 mt-3 text-sm font-bold">
                   {creatorProfile.website && (
                     <a href={creatorProfile.website} target="_blank" rel="noreferrer" style={{ color: brandColor }} className="hover:opacity-80">Website</a>
                   )}
