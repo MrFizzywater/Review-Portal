@@ -3,7 +3,7 @@ import { collection, query, where, onSnapshot, addDoc, serverTimestamp } from 'f
 import { db, auth } from '../firebase';
 import { User, signOut } from 'firebase/auth';
 import { Link } from 'react-router-dom';
-import { Plus, Folder, LogOut, ExternalLink, Settings, Copy, Users, Edit2, Trash2, CopyPlus } from 'lucide-react';
+import { Plus, Folder, LogOut, ExternalLink, Settings, Copy, Users, Edit2, Trash2, CopyPlus, Archive, ArchiveRestore } from 'lucide-react';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { deleteDoc, doc, updateDoc } from 'firebase/firestore';
 
@@ -14,6 +14,7 @@ interface Project {
   clientId?: string;
   maxRevisions: number;
   password?: string;
+  status?: 'active' | 'archived';
   createdAt: any;
 }
 
@@ -37,7 +38,7 @@ interface Client {
 }
 
 export default function CreatorDashboard({ user }: { user: User }) {
-  const [activeTab, setActiveTab] = useState<'projects' | 'clients'>('projects');
+  const [activeTab, setActiveTab] = useState<'projects' | 'clients' | 'archived'>('projects');
   const [projects, setProjects] = useState<Project[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   
@@ -73,14 +74,33 @@ export default function CreatorDashboard({ user }: { user: User }) {
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const selectedClient = clients.find(c => c.id === newProject.clientId);
-      const clientName = selectedClient ? selectedClient.name : newProject.clientName;
-      const clientEmail = selectedClient ? selectedClient.email : '';
+      let finalClientId = newProject.clientId;
+      let finalClientName = '';
+      let finalClientEmail = '';
+
+      if (finalClientId) {
+        const selectedClient = clients.find(c => c.id === finalClientId);
+        finalClientName = selectedClient ? selectedClient.name : '';
+        finalClientEmail = selectedClient ? selectedClient.email : '';
+      } else if (newProject.clientName) {
+        // Auto-create client if a new name is typed
+        const newClientRef = await addDoc(collection(db, 'clients'), {
+          name: newProject.clientName,
+          email: '',
+          phone: '',
+          creatorId: user.uid,
+          createdAt: serverTimestamp()
+        });
+        finalClientId = newClientRef.id;
+        finalClientName = newProject.clientName;
+      }
 
       await addDoc(collection(db, 'projects'), {
         ...newProject,
-        clientName,
-        clientEmail,
+        clientId: finalClientId,
+        clientName: finalClientName,
+        clientEmail: finalClientEmail,
+        status: 'active',
         creatorId: user.uid,
         createdAt: serverTimestamp()
       });
@@ -135,6 +155,30 @@ export default function CreatorDashboard({ user }: { user: User }) {
     alert('Link and password copied to clipboard!');
   };
 
+  const handleArchiveProject = async (e: React.MouseEvent, id: string, currentStatus: string | undefined) => {
+    e.preventDefault();
+    try {
+      await updateDoc(doc(db, 'projects', id), {
+        status: currentStatus === 'archived' ? 'active' : 'archived'
+      });
+    } catch (error) {
+      console.error("Error archiving project", error);
+      alert("Failed to update project status");
+    }
+  };
+
+  const handleDeleteProject = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    if (confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
+      try {
+        await deleteDoc(doc(db, 'projects', id));
+      } catch (error) {
+        console.error("Error deleting project", error);
+        alert("Failed to delete project");
+      }
+    }
+  };
+
   const handleDuplicateProject = (e: React.MouseEvent, project: Project) => {
     e.preventDefault();
     setNewProject({
@@ -176,13 +220,19 @@ export default function CreatorDashboard({ user }: { user: User }) {
             onClick={() => setActiveTab('projects')}
             className={`py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'projects' ? 'border-black dark:border-white text-black dark:text-white' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
           >
-            <Folder className="w-4 h-4" /> Projects
+            <Folder className="w-4 h-4" /> Active Projects
           </button>
           <button 
             onClick={() => setActiveTab('clients')}
             className={`py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'clients' ? 'border-black dark:border-white text-black dark:text-white' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
           >
             <Users className="w-4 h-4" /> Clients
+          </button>
+          <button 
+            onClick={() => setActiveTab('archived')}
+            className={`py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'archived' ? 'border-black dark:border-white text-black dark:text-white' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'}`}
+          >
+            <Archive className="w-4 h-4" /> Archived
           </button>
         </div>
       </header>
@@ -238,7 +288,7 @@ export default function CreatorDashboard({ user }: { user: User }) {
                           value={newProject.clientName}
                           onChange={e => setNewProject({...newProject, clientName: e.target.value})}
                           className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent outline-none dark:bg-gray-700 dark:text-white ${clients.length > 0 ? 'mt-2' : ''}`}
-                          placeholder="e.g. Acme Corp"
+                          placeholder="e.g. Acme Corp (New Company Name)"
                         />
                       )}
                     </div>
@@ -285,34 +335,45 @@ export default function CreatorDashboard({ user }: { user: User }) {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {projects.map(project => (
+              {projects.filter(p => p.status !== 'archived').map(project => (
                 <Link
                   key={project.id}
                   to={`/project/${project.id}`}
-                  className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-gray-300 dark:hover:border-gray-600 transition-all group block"
+                  className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md hover:border-gray-300 dark:hover:border-gray-600 transition-all group block relative"
                 >
                   <div className="flex justify-between items-start mb-4">
                     <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400 group-hover:bg-black dark:group-hover:bg-white group-hover:text-white dark:group-hover:text-black transition-colors">
                       <Folder className="w-5 h-5" />
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                       <button 
-                        onClick={(e) => handleDuplicateProject(e, project)}
+                        onClick={(e) => { e.preventDefault(); handleArchiveProject(e, project.id, project.status); }}
+                        className="p-1.5 text-gray-400 hover:text-yellow-600 dark:hover:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 rounded-md transition-colors"
+                        title="Archive Project"
+                      >
+                        <Archive className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.preventDefault(); handleDeleteProject(e, project.id); }}
+                        className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
+                        title="Delete Project"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.preventDefault(); handleDuplicateProject(e, project); }}
                         className="p-1.5 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
                         title="Duplicate Project"
                       >
                         <CopyPlus className="w-4 h-4" />
                       </button>
                       <button 
-                        onClick={(e) => copyAccess(e, project)}
+                        onClick={(e) => { e.preventDefault(); copyAccess(e, project); }}
                         className="p-1.5 text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"
                         title="Copy Link & Password"
                       >
                         <Copy className="w-4 h-4" />
                       </button>
-                      <span className="text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-full">
-                        {project.maxRevisions} revs
-                      </span>
                     </div>
                   </div>
                   <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-1">{project.title}</h3>
@@ -324,11 +385,65 @@ export default function CreatorDashboard({ user }: { user: User }) {
                   </div>
                 </Link>
               ))}
-              {projects.length === 0 && !isCreatingProject && (
+              {projects.filter(p => p.status !== 'archived').length === 0 && !isCreatingProject && (
                 <div className="col-span-full text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-300 dark:border-gray-700">
                   <Folder className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-                  <h3 className="text-gray-900 dark:text-white font-medium mb-1">No projects yet</h3>
+                  <h3 className="text-gray-900 dark:text-white font-medium mb-1">No active projects</h3>
                   <p className="text-gray-500 dark:text-gray-400 text-sm">Create your first project to start sharing with clients.</p>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {activeTab === 'archived' && (
+          <>
+            <div className="flex items-center justify-between mb-8">
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Archived Projects</h1>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {projects.filter(p => p.status === 'archived').map(project => (
+                <div
+                  key={project.id}
+                  className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 opacity-75 hover:opacity-100 transition-all group block relative"
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center text-gray-500 dark:text-gray-400">
+                      <Archive className="w-5 h-5" />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={(e) => { e.preventDefault(); handleArchiveProject(e, project.id, project.status); }}
+                        className="p-1.5 text-gray-400 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-md transition-colors"
+                        title="Restore Project"
+                      >
+                        <ArchiveRestore className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.preventDefault(); handleDeleteProject(e, project.id); }}
+                        className="p-1.5 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
+                        title="Delete Project"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-1">{project.title}</h3>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm mb-4">{project.clientName}</p>
+                  
+                  <div className="pt-4 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
+                    <Link to={`/project/${project.id}`} className="hover:text-black dark:hover:text-white transition-colors flex items-center gap-1">
+                      View details <ExternalLink className="w-3 h-3" />
+                    </Link>
+                  </div>
+                </div>
+              ))}
+              {projects.filter(p => p.status === 'archived').length === 0 && (
+                <div className="col-span-full text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-300 dark:border-gray-700">
+                  <Archive className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+                  <h3 className="text-gray-900 dark:text-white font-medium mb-1">No archived projects</h3>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm">Projects you archive will appear here.</p>
                 </div>
               )}
             </div>
@@ -358,21 +473,12 @@ export default function CreatorDashboard({ user }: { user: User }) {
                 <form onSubmit={handleSaveClient} className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Client Name</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Company Name</label>
                       <input
                         type="text"
                         required
                         value={clientForm.name}
                         onChange={e => setClientForm({...clientForm, name: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent outline-none dark:bg-gray-700 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Company Name</label>
-                      <input
-                        type="text"
-                        value={clientForm.company}
-                        onChange={e => setClientForm({...clientForm, company: e.target.value})}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent outline-none dark:bg-gray-700 dark:text-white"
                       />
                     </div>
@@ -540,7 +646,6 @@ export default function CreatorDashboard({ user }: { user: User }) {
                   </div>
                   <h3 className="font-bold text-gray-900 dark:text-white text-lg mb-2">{client.name}</h3>
                   <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
-                    {client.company && <p className="font-medium text-gray-800 dark:text-gray-300">{client.company}</p>}
                     {client.contactPerson && <p>Contact: {client.contactPerson}</p>}
                     {client.email && <p>{client.email}</p>}
                     {client.phone && <p>{client.phone}</p>}

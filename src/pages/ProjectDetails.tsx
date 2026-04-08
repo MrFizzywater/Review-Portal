@@ -28,6 +28,7 @@ interface InvoiceItem {
 export default function ProjectDetails({ user }: { user: User }) {
   const { projectId } = useParams();
   const [project, setProject] = useState<any>(null);
+  const [clientDetails, setClientDetails] = useState<any>(null);
   const [creatorProfile, setCreatorProfile] = useState<any>(null);
   const [versions, setVersions] = useState<any[]>([]);
   const [changeRequests, setChangeRequests] = useState<any[]>([]);
@@ -66,6 +67,13 @@ export default function ProjectDetails({ user }: { user: User }) {
         setProject(data);
         setEditForm({ title: data.title || '', clientName: data.clientName || '', clientEmail: data.clientEmail || '', password: data.password || '' });
         
+        if (data.clientId) {
+          const clientDoc = await getDoc(doc(db, 'clients', data.clientId));
+          if (clientDoc.exists()) {
+            setClientDetails({ id: clientDoc.id, ...clientDoc.data() });
+          }
+        }
+
         if (data.invoice) {
           setInvoiceItems(data.invoice.items || []);
           setInvoiceDueDate(data.invoice.dueDate || '');
@@ -732,7 +740,16 @@ export default function ProjectDetails({ user }: { user: User }) {
               <div className="mt-8 flex justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
                 <div>
                   <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Billed To</p>
-                  <p className="font-bold text-gray-900 dark:text-white">{project.clientName}</p>
+                  <p className="font-bold text-gray-900 dark:text-white">{clientDetails?.name || project.clientName}</p>
+                  {clientDetails?.contactPerson && <p className="text-sm text-gray-600 dark:text-gray-400">{clientDetails.contactPerson}</p>}
+                  {clientDetails?.street && <p className="text-sm text-gray-600 dark:text-gray-400">{clientDetails.street}</p>}
+                  {(clientDetails?.city || clientDetails?.state || clientDetails?.zip) && (
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      {[clientDetails.city, clientDetails.state, clientDetails.zip].filter(Boolean).join(', ')}
+                    </p>
+                  )}
+                  {clientDetails?.country && <p className="text-sm text-gray-600 dark:text-gray-400">{clientDetails.country}</p>}
+                  {!clientDetails?.street && clientDetails?.address && <p className="text-sm text-gray-600 dark:text-gray-400">{clientDetails.address}</p>}
                 </div>
                 <div className="text-right">
                   <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Due Date</p>

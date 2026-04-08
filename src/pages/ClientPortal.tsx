@@ -98,7 +98,11 @@ export default function ClientPortal() {
             const creatorRef = doc(db, 'users', projData.creatorId);
             const creatorSnap = await getDoc(creatorRef);
             if (creatorSnap.exists()) {
-              setCreatorProfile(creatorSnap.data());
+              const profileData = creatorSnap.data();
+              setCreatorProfile(profileData);
+              if (profileData.displayName) {
+                document.title = `${profileData.displayName}'s Media Review Portal`;
+              }
             }
           }
         }
