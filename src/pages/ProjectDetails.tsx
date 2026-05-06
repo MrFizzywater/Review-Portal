@@ -115,6 +115,7 @@ export default function ProjectDetails({ user }: { user: User }) {
   const [amountPaid, setAmountPaid] = useState<number>(0);
   const [isSavingInvoice, setIsSavingInvoice] = useState(false);
   const [isUploadingToDrive, setIsUploadingToDrive] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [googleToken, setGoogleToken] = useState<{ token: string, expiresAt: number } | null>(null);
 
@@ -179,6 +180,7 @@ export default function ProjectDetails({ user }: { user: User }) {
 
   const performDriveUpload = async (type: 'version' | 'final', file: File, token: string, index?: number) => {
     setIsUploadingToDrive(true);
+    setUploadProgress(0);
     
     try {
       // 1. Get or create the folder structure: Root > Client Name > Project Title
@@ -230,35 +232,63 @@ export default function ProjectDetails({ user }: { user: User }) {
         setProject(prev => ({ ...prev, googleFolderId: targetFolderId }));
       }
 
-      // 2. Upload the file to the target folder
+      // 2. Initiate Resumable Upload Session
       const metadata = {
         name: file.name,
-        mimeType: file.type || 'video/mp4', // Explicitly set mimeType
+        mimeType: file.type || 'video/mp4',
         parents: [targetFolderId]
       };
 
-      const formData = new FormData();
-      formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-      formData.append('file', file);
-
-      const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,mimeType', {
+      const sessionResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'X-Upload-Content-Type': file.type || 'video/mp4',
+          'X-Upload-Content-Length': file.size.toString()
         },
-        body: formData
+        body: JSON.stringify(metadata)
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error?.message || 'Upload failed');
+      if (!sessionResponse.ok) {
+        throw new Error('Failed to initiate upload session');
       }
-      
-      const result = await response.json();
-      
-      // 3. Set permission to "anyone with link" to ensure embed works without 3rd party cookies auth issues
+
+      const uploadUrl = sessionResponse.headers.get('Location');
+      if (!uploadUrl) {
+        throw new Error('No upload session URL received');
+      }
+
+      // 3. Upload file with Progress Tracking using XMLHttpRequest
+      const resultId = await new Promise<string>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', uploadUrl);
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            const percentComplete = Math.round((event.loaded / event.total) * 100);
+            setUploadProgress(percentComplete);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            const response = JSON.parse(xhr.responseText);
+            resolve(response.id);
+          } else {
+            console.error("Upload error response:", xhr.responseText);
+            reject(new Error(`Upload failed with status ${xhr.status}`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Network error during upload'));
+        xhr.send(file);
+      });
+
+      // 4. Set permission to "anyone with link"
       try {
-        await fetch(`https://www.googleapis.com/drive/v3/files/${result.id}/permissions`, {
+        await fetch(`https://www.googleapis.com/drive/v3/files/${resultId}/permissions`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -273,7 +303,12 @@ export default function ProjectDetails({ user }: { user: User }) {
         console.warn("Could not set file permissions. Video might not load for all viewers.", permError);
       }
 
-      const driveLink = result.webViewLink || `https://drive.google.com/open?id=${result.id}`;
+      // 5. Get links
+      const fileRes = await fetch(`https://www.googleapis.com/drive/v3/files/${resultId}?fields=webViewLink`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const fileResult = await fileRes.json();
+      const driveLink = fileResult.webViewLink || `https://drive.google.com/open?id=${resultId}`;
       
       if (type === 'version') {
         setNewVersion(prev => ({ ...prev, driveLink }));
@@ -917,14 +952,25 @@ export default function ProjectDetails({ user }: { user: User }) {
                               className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md outline-none dark:bg-gray-700 dark:text-white"
                               placeholder="Download Link (Google Drive, etc.)"
                             />
-                            <div className="flex justify-end">
-                              <button
-                                type="button"
-                                onClick={() => initiateDriveUpload('final', index)}
-                                className="text-[10px] bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 px-2 py-1 rounded text-gray-500 font-bold flex items-center gap-1"
-                              >
-                                <Upload className={`w-3 h-3 ${(isUploadingToDrive || isAuthenticating) ? 'animate-bounce' : ''}`} /> {isAuthenticating ? 'Signing in...' : isUploadingToDrive ? 'Uploading...' : 'Upload to Drive'}
-                              </button>
+                            <div className="flex flex-col gap-2">
+                              <div className="flex justify-end">
+                                <button
+                                  type="button"
+                                  disabled={isUploadingToDrive}
+                                  onClick={() => initiateDriveUpload('final', index)}
+                                  className="text-[10px] bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 px-2 py-1 rounded text-gray-500 font-bold flex items-center gap-1 disabled:opacity-50"
+                                >
+                                  <Upload className={`w-3 h-3 ${(isUploadingToDrive || isAuthenticating) ? 'animate-bounce' : ''}`} /> {isAuthenticating ? 'Signing in...' : isUploadingToDrive ? `Uploading (${uploadProgress}%)` : 'Upload to Drive'}
+                                </button>
+                              </div>
+                              {isUploadingToDrive && uploadProgress > 0 && uploadProgress < 100 && (
+                                <div className="w-full h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full bg-green-500 transition-all duration-300" 
+                                    style={{ width: `${uploadProgress}%` }}
+                                  />
+                                </div>
+                              )}
                             </div>
                           </div>
                           {deliveryForm.files.length > 1 && (
@@ -1056,12 +1102,27 @@ export default function ProjectDetails({ user }: { user: User }) {
                         />
                         <button
                           type="button"
+                          disabled={isUploadingToDrive}
                           onClick={() => initiateDriveUpload('version')}
-                          className="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-gray-600 dark:text-gray-300 flex items-center gap-2 text-xs font-bold"
+                          className="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-gray-600 dark:text-gray-300 flex items-center gap-2 text-xs font-bold disabled:opacity-50"
                         >
-                          <Upload className={`w-4 h-4 ${(isUploadingToDrive || isAuthenticating) ? 'animate-bounce' : ''}`} /> {isAuthenticating ? 'Auth...' : isUploadingToDrive ? 'Uploading...' : 'Drive'}
+                          <Upload className={`w-4 h-4 ${(isUploadingToDrive || isAuthenticating) ? 'animate-bounce' : ''}`} /> {isAuthenticating ? 'Auth...' : isUploadingToDrive ? `${uploadProgress}%` : 'Drive'}
                         </button>
                       </div>
+                      {isUploadingToDrive && (
+                        <div className="mt-2 space-y-1">
+                          <div className="flex justify-between text-[10px] text-gray-500 font-bold">
+                            <span>Uploading to Google Drive...</span>
+                            <span>{uploadProgress}%</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-blue-600 transition-all duration-300" 
+                              style={{ width: `${uploadProgress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
