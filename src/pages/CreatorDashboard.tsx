@@ -367,7 +367,7 @@ export default function CreatorDashboard({ user }: { user: User }) {
 
               return Object.entries(grouped)
                 .sort(([a], [b]) => a.localeCompare(b))
-                .map(([clientName, clientProjects]) => (
+                .map(([clientName, clientProjects]: [string, Project[]]) => (
                   <div key={clientName} className="mb-10">
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                       <Users className="w-5 h-5 text-gray-400" /> {clientName}

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, onSnapshot, addDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Lock, CheckCircle, AlertCircle, ExternalLink, Clock, Send, Upload, X, Plus, FileText, Download, Printer } from 'lucide-react';
+import { Lock, CheckCircle, AlertCircle, ExternalLink, Clock, Send, Upload, X, Plus, FileText, Download, Printer, Eye } from 'lucide-react';
 import { format } from 'date-fns';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { sendEmail } from '../lib/email';
@@ -73,6 +73,9 @@ const resizeImage = (file: File): Promise<string> => {
 
 export default function ClientPortal() {
   const { projectId } = useParams();
+  const [searchParams] = useSearchParams();
+  const isViewerMode = searchParams.get('mode') === 'viewer';
+  
   const [password, setPassword] = useState('');
   const [reviewerName, setReviewerName] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -377,13 +380,21 @@ export default function ClientPortal() {
           </div>
           <div className="flex items-center gap-4">
             <ThemeToggle />
-            <span className="text-sm font-medium text-gray-600 dark:text-gray-300 hidden sm:inline">Reviewing as: <span className="text-black dark:text-white">{reviewerName}</span></span>
-            <div 
-              className="text-sm font-bold px-3 py-1.5 rounded-lg"
-              style={{ backgroundColor: `rgba(${brandRgb}, 0.1)`, color: brandColor }}
-            >
-              {revisionsLeft} revisions remaining
-            </div>
+            {isViewerMode ? (
+              <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-3 py-1.5 rounded-lg text-sm font-medium">
+                <Eye className="w-4 h-4" /> Viewer Mode
+              </div>
+            ) : (
+              <>
+                <span className="text-sm font-medium text-gray-600 dark:text-gray-300 hidden sm:inline">Reviewing as: <span className="text-black dark:text-white">{reviewerName}</span></span>
+                <div 
+                  className="text-sm font-bold px-3 py-1.5 rounded-lg"
+                  style={{ backgroundColor: `rgba(${brandRgb}, 0.1)`, color: brandColor }}
+                >
+                  {revisionsLeft} revisions remaining
+                </div>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -398,14 +409,38 @@ export default function ClientPortal() {
             <p className="text-green-800 dark:text-green-300 mb-4">
               {project.finalDelivery.notes || "Your final deliverables have been uploaded and are ready to download."}
             </p>
-            <a
-              href={project.finalDelivery.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold inline-flex items-center gap-2 transition-colors shadow-sm"
-            >
-              <Download className="w-5 h-5" /> Download Final Files
-            </a>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mt-4">
+              {project.finalDelivery.files?.map((file: any, i: number) => (
+                <a
+                  key={i}
+                  href={file.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-white dark:bg-gray-800 border border-green-200 dark:border-green-800 p-4 rounded-xl shadow-sm hover:shadow-md transition-all hover:border-green-400 group flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 truncate">
+                    <div className="bg-green-100 dark:bg-green-900/30 p-2 rounded-lg text-green-600">
+                      <Download className="w-5 h-5" />
+                    </div>
+                    <span className="font-bold text-sm text-green-900 dark:text-green-400 truncate">{file.label || 'File'}</span>
+                  </div>
+                  <Download className="w-4 h-4 text-green-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </a>
+              ))}
+              
+              {/* Fallback for single file link */}
+              {!project.finalDelivery.files && project.finalDelivery.link && (
+                <a
+                  href={project.finalDelivery.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-bold inline-flex items-center gap-2 transition-colors shadow-sm"
+                >
+                  <Download className="w-5 h-5" /> Download Final Files
+                </a>
+              )}
+            </div>
           </div>
         )}
 
@@ -413,7 +448,7 @@ export default function ClientPortal() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 print:hidden">
             
             {/* Left Column: Player & Approval */}
-            <div className="lg:col-span-2 space-y-6">
+            <div className={`${isViewerMode ? 'lg:col-span-3' : 'lg:col-span-2'} space-y-6`}>
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors">
                 <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
                   <div>
@@ -515,8 +550,9 @@ export default function ClientPortal() {
             </div>
 
             {/* Right Column: Change Requests */}
-            <div className="space-y-6">
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col h-[600px] transition-colors">
+            {!isViewerMode && (
+              <div className="space-y-6">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col h-[600px] transition-colors">
                 <div className="p-4 border-b border-gray-100 dark:border-gray-700" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
                   <h3 className="font-bold text-gray-900 dark:text-white">Requested Changes</h3>
                   <p className="text-xs text-gray-500 dark:text-gray-400">For Version {currentVersion.versionNumber}</p>
@@ -583,7 +619,7 @@ export default function ClientPortal() {
                 )}
               </div>
             </div>
-
+            )}
           </div>
         ) : (
           <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
@@ -591,7 +627,7 @@ export default function ClientPortal() {
           </div>
         )}
 
-        {hasInvoice && (
+        {!isViewerMode && hasInvoice && (
           <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden print:shadow-none print:border-none print:mt-0 transition-colors">
             <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center print:hidden" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
               <div className="flex items-center gap-3">
@@ -624,32 +660,33 @@ export default function ClientPortal() {
               </div>
             </div>
 
-            {/* Print Only Header */}
-            <div className="hidden print:block p-8 pb-0">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">INVOICE</h1>
-                  <p className="text-gray-600 dark:text-gray-400 font-medium">{project.title}</p>
-                </div>
-                <div className="text-right">
-                  <h2 className="font-bold text-gray-900 dark:text-white">{creatorProfile?.displayName || 'Creator'}</h2>
-                  {creatorProfile?.businessAddress && (
-                    <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap mt-1">{creatorProfile.businessAddress}</p>
-                  )}
-                  {creatorProfile?.taxId && (
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Tax ID: {creatorProfile.taxId}</p>
-                  )}
-                </div>
+            {/* Invoice Header Info (Visible in Web & Print) */}
+            <div className="p-6 pt-8 pb-0 flex flex-col md:flex-row justify-between items-start gap-4">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 print:block hidden">INVOICE</h1>
+                <p className="text-gray-600 dark:text-gray-400 font-medium">{project.title}</p>
+                {project.invoice.number && <p className="text-sm font-bold text-gray-700 dark:text-gray-300 mt-1">Invoice #: {project.invoice.number}</p>}
+                {project.invoice.date && <p className="text-sm text-gray-600 dark:text-gray-400">Date: {format(new Date(project.invoice.date), 'MMM d, yyyy')}</p>}
               </div>
-              <div className="mt-8 flex justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
-                <div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Billed To</p>
-                  <p className="font-bold text-gray-900 dark:text-white">{project.clientName}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Due Date</p>
-                  <p className="font-bold text-gray-900 dark:text-white">{project.invoice.dueDate ? format(new Date(project.invoice.dueDate), 'MMM d, yyyy') : 'Receipt'}</p>
-                </div>
+              <div className="text-right md:text-right text-left">
+                <h2 className="font-bold text-gray-900 dark:text-white">{creatorProfile?.displayName || 'Creator'}</h2>
+                {creatorProfile?.businessAddress && (
+                  <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap mt-1">{creatorProfile.businessAddress}</p>
+                )}
+                {creatorProfile?.taxId && (
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Tax ID: {creatorProfile.taxId}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 mt-8 flex justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
+              <div>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Billed To</p>
+                <p className="font-bold text-gray-900 dark:text-white">{project.clientName}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Due Date</p>
+                <p className="font-bold text-gray-900 dark:text-white">{project.invoice.dueDate ? format(new Date(project.invoice.dueDate), 'MMM d, yyyy') : 'Receipt'}</p>
               </div>
             </div>
 
@@ -659,10 +696,17 @@ export default function ClientPortal() {
                   <div className="flex-1">Description</div>
                   <div className="w-32 text-right">Amount</div>
                 </div>
-                {project.invoice.items.map((item: any, i: number) => (
-                  <div key={i} className="flex justify-between items-center border-b border-gray-100 dark:border-gray-700 pb-4 last:border-0 last:pb-0 print:border-b print:border-gray-100 print:py-2">
-                    <span className="text-gray-800 dark:text-gray-200 font-medium flex-1">{item.description}</span>
-                    <span className="text-gray-900 dark:text-white font-bold w-32 text-right">${Number(item.amount).toFixed(2)}</span>
+                {project.invoice.items?.map((item: any, i: number) => (
+                  <div key={i} className="flex flex-col border-b border-gray-100 dark:border-gray-700 py-4 last:border-0 last:pb-0 print:border-b print:border-gray-100 print:py-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-800 dark:text-gray-200 font-bold flex-1">{item.description}</span>
+                      <span className="text-gray-900 dark:text-white font-bold w-32 text-right">${Number(item.amount).toFixed(2)}</span>
+                    </div>
+                    {item.details && (
+                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 italic">
+                        {item.details}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>

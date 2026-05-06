@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, onSnapshot, addDoc, serverTimestamp, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot, addDoc, serverTimestamp, updateDoc, deleteDoc, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { User } from 'firebase/auth';
-import { ArrowLeft, Plus, Link as LinkIcon, Eye, CheckCircle, Clock, AlertCircle, ExternalLink, Image as ImageIcon, Settings, FileText, LayoutDashboard, Trash2, Save, Printer, Send, Edit2, ArrowUp } from 'lucide-react';
+import { ArrowLeft, Plus, Link as LinkIcon, Eye, CheckCircle, Clock, AlertCircle, ExternalLink, Image as ImageIcon, Settings, FileText, LayoutDashboard, Trash2, Save, Printer, Send, Edit2, ArrowUp, X, Download, Users, Upload } from 'lucide-react';
 import { format } from 'date-fns';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { sendEmail } from '../lib/email';
@@ -13,12 +13,16 @@ function getDriveEmbedUrl(url: string) {
   try {
     const urlObj = new URL(url);
     if (urlObj.hostname.includes('drive.google.com')) {
+      // Handle folder links
       const folderMatch = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
       if (folderMatch && folderMatch[1]) {
         return `https://drive.google.com/embeddedfolderview?id=${folderMatch[1]}#grid`;
       }
+      
+      // Handle file links - convert to preview for better embedding
       const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
       if (match && match[1]) {
+        // Use /preview for embedding
         return `https://drive.google.com/file/d/${match[1]}/preview`;
       }
     }
@@ -28,9 +32,52 @@ function getDriveEmbedUrl(url: string) {
   return url;
 }
 
+function getDriveFileId(url: string): string | null {
+  if (!url) return null;
+  const match = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : null;
+}
+
 interface InvoiceItem {
   description: string;
+  details?: string;
+  type: 'hourly' | 'item' | 'fixed';
+  rate: number;
+  quantity: number;
   amount: number;
+}
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: null, 
+      email: null
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  return new Error(JSON.stringify(errInfo));
 }
 
 export default function ProjectDetails({ user }: { user: User }) {
@@ -44,7 +91,11 @@ export default function ProjectDetails({ user }: { user: User }) {
   const [clients, setClients] = useState<any[]>([]);
   const [isAddingVersion, setIsAddingVersion] = useState(false);
   const [isEditingDelivery, setIsEditingDelivery] = useState(false);
-  const [deliveryForm, setDeliveryForm] = useState({ link: '', notes: '', notifyClient: true });
+  const [deliveryForm, setDeliveryForm] = useState<{ files: { label: string, link: string }[], notes: string, notifyClient: boolean }>({ 
+    files: [{ label: '', link: '' }], 
+    notes: '', 
+    notifyClient: true 
+  });
   const [editingVersionId, setEditingVersionId] = useState<string | null>(null);
   const [newVersion, setNewVersion] = useState({ driveLink: '', type: 'video', creatorNotes: '', notifyClient: true });
   const [loading, setLoading] = useState(true);
@@ -56,11 +107,194 @@ export default function ProjectDetails({ user }: { user: User }) {
 
   // Invoice State
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
+  const [invoiceNumber, setInvoiceNumber] = useState('');
+  const [invoiceDate, setInvoiceDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [invoiceDueDate, setInvoiceDueDate] = useState('');
   const [invoiceNotes, setInvoiceNotes] = useState('');
   const [invoiceStatus, setInvoiceStatus] = useState<'draft' | 'sent' | 'paid'>('draft');
   const [amountPaid, setAmountPaid] = useState<number>(0);
   const [isSavingInvoice, setIsSavingInvoice] = useState(false);
+  const [isUploadingToDrive, setIsUploadingToDrive] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [googleToken, setGoogleToken] = useState<{ token: string, expiresAt: number } | null>(null);
+
+  // Trigger Drive Auth and then File Picker
+  const initiateDriveUpload = async (type: 'version' | 'final', index?: number) => {
+    if (!creatorProfile?.googleClientId || !creatorProfile?.googleDriveFolderId) {
+      alert("Please configure your Google Drive integration (Client ID and Folder ID) in Admin Settings first.");
+      return;
+    }
+
+    // Check for cached token
+    if (googleToken && googleToken.expiresAt > Date.now()) {
+      openFilePicker(type, googleToken.token, index);
+      return;
+    }
+
+    setIsAuthenticating(true);
+    try {
+      // @ts-ignore
+      if (typeof google === 'undefined') {
+        throw new Error("Google API library not loaded yet. Please refresh.");
+      }
+
+      // @ts-ignore
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: creatorProfile.googleClientId,
+        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.install',
+        callback: (response: any) => {
+          setIsAuthenticating(false);
+          if (response.error) {
+            console.error("Auth error:", response.error);
+            alert("Authentication failed: " + (response.error_description || response.error));
+            return;
+          }
+          
+          const token = response.access_token;
+          const expiresAt = Date.now() + (parseInt(response.expires_in) * 1000) - 60000; // Subtract 1 min for safety
+          setGoogleToken({ token, expiresAt });
+          
+          openFilePicker(type, token, index);
+        },
+      });
+      client.requestAccessToken();
+    } catch (e) {
+      console.error("GSI library error:", e);
+      setIsAuthenticating(false);
+      alert("Error: " + (e instanceof Error ? e.message : "Google library error"));
+    }
+  };
+
+  const openFilePicker = (type: 'version' | 'final', token: string, index?: number) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.onchange = (e: any) => {
+      const file = e.target.files[0];
+      if (file) {
+        performDriveUpload(type, file, token, index);
+      }
+    };
+    input.click();
+  };
+
+  const performDriveUpload = async (type: 'version' | 'final', file: File, token: string, index?: number) => {
+    setIsUploadingToDrive(true);
+    
+    try {
+      // 1. Get or create the folder structure: Root > Client Name > Project Title
+      let targetFolderId = creatorProfile.googleDriveFolderId;
+      
+      const getOrCreateFolder = async (name: string, parentId: string) => {
+        const query = encodeURIComponent(`name = '${name.replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`);
+        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id)`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const searchResult = await searchRes.json();
+        
+        if (searchResult.files && searchResult.files.length > 0) {
+          return searchResult.files[0].id;
+        }
+        
+        const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            name,
+            mimeType: 'application/vnd.google-apps.folder',
+            parents: [parentId]
+          })
+        });
+        const createResult = await createRes.json();
+        return createResult.id;
+      };
+
+      // Check if project already has a folder ID that isn't the root folder itself
+      if (project.googleFolderId && project.googleFolderId !== creatorProfile.googleDriveFolderId) {
+        targetFolderId = project.googleFolderId;
+      } else {
+        // Create Client folder inside root
+        const clientFolderName = project.clientName || 'Unassigned Clients';
+        const clientFolderId = await getOrCreateFolder(clientFolderName, creatorProfile.googleDriveFolderId);
+        
+        // Create Project folder inside client folder
+        const projectFolderName = project.title || 'Untitled Project';
+        targetFolderId = await getOrCreateFolder(projectFolderName, clientFolderId);
+        
+        // Save this folder ID to the project for future use
+        await updateDoc(doc(db, 'projects', projectId!), {
+          googleFolderId: targetFolderId
+        });
+        setProject(prev => ({ ...prev, googleFolderId: targetFolderId }));
+      }
+
+      // 2. Upload the file to the target folder
+      const metadata = {
+        name: file.name,
+        mimeType: file.type || 'video/mp4', // Explicitly set mimeType
+        parents: [targetFolderId]
+      };
+
+      const formData = new FormData();
+      formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      formData.append('file', file);
+
+      const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,mimeType', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error?.message || 'Upload failed');
+      }
+      
+      const result = await response.json();
+      
+      // 3. Set permission to "anyone with link" to ensure embed works without 3rd party cookies auth issues
+      try {
+        await fetch(`https://www.googleapis.com/drive/v3/files/${result.id}/permissions`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            role: 'reader',
+            type: 'anyone'
+          })
+        });
+      } catch (permError) {
+        console.warn("Could not set file permissions. Video might not load for all viewers.", permError);
+      }
+
+      const driveLink = result.webViewLink || `https://drive.google.com/open?id=${result.id}`;
+      
+      if (type === 'version') {
+        setNewVersion(prev => ({ ...prev, driveLink }));
+      } else if (type === 'final' && typeof index === 'number') {
+        const newFiles = [...deliveryForm.files];
+        newFiles[index] = { 
+          ...newFiles[index], 
+          link: driveLink,
+          label: newFiles[index].label || file.name.split('.')[0]
+        };
+        setDeliveryForm(prev => ({ ...prev, files: newFiles }));
+      }
+      
+      alert(`Success! "${file.name}" uploaded to Drive.`);
+    } catch (error) {
+      console.error("Drive upload error:", error);
+      alert("Error: " + (error instanceof Error ? error.message : "Failed to upload file"));
+    } finally {
+      setIsUploadingToDrive(false);
+    }
+  };
 
   useEffect(() => {
     if (!projectId) return;
@@ -87,6 +321,8 @@ export default function ProjectDetails({ user }: { user: User }) {
 
         if (data.invoice) {
           setInvoiceItems(data.invoice.items || []);
+          setInvoiceNumber(data.invoice.number || '');
+          setInvoiceDate(data.invoice.date || format(new Date(), 'yyyy-MM-dd'));
           setInvoiceDueDate(data.invoice.dueDate || '');
           setInvoiceNotes(data.invoice.notes || '');
           setInvoiceStatus(data.invoice.status || 'draft');
@@ -205,7 +441,7 @@ export default function ProjectDetails({ user }: { user: User }) {
     e.preventDefault();
     try {
       const deliveryData = {
-        link: deliveryForm.link,
+        files: deliveryForm.files.filter(f => f.label && f.link),
         notes: deliveryForm.notes,
         createdAt: serverTimestamp()
       };
@@ -247,17 +483,32 @@ export default function ProjectDetails({ user }: { user: User }) {
     }
   };
 
+  const addDeliveryFile = () => {
+    setDeliveryForm({ ...deliveryForm, files: [...deliveryForm.files, { label: '', link: '' }] });
+  };
+
+  const updateDeliveryFile = (index: number, field: 'label' | 'link', value: string) => {
+    const newFiles = [...deliveryForm.files];
+    newFiles[index] = { ...newFiles[index], [field]: value };
+    setDeliveryForm({ ...deliveryForm, files: newFiles });
+  };
+
+  const removeDeliveryFile = (index: number) => {
+    setDeliveryForm({ ...deliveryForm, files: deliveryForm.files.filter((_, i) => i !== index) });
+  };
+
   const toggleChangeCompletion = async (requestId: string, completed: boolean) => {
     await updateDoc(doc(db, 'change_requests', requestId), {
       completed
     });
   };
 
-  const copyClientLink = () => {
+  const copyClientLink = (readOnly = false) => {
     const baseUrl = window.location.origin;
-    const url = `${baseUrl}/p/${projectId}`;
+    let url = `${baseUrl}/p/${projectId}`;
+    if (readOnly) url += '?mode=viewer';
     navigator.clipboard.writeText(url);
-    alert('Client link copied to clipboard!\n\n' + url);
+    alert(`${readOnly ? 'ReadOnly Viewer' : 'Client'} link copied to clipboard!\n\n` + url);
   };
 
   const saveSettings = async (e: React.FormEvent) => {
@@ -296,6 +547,36 @@ export default function ProjectDetails({ user }: { user: User }) {
     }
   };
 
+  const generateInvoiceNumber = async () => {
+    try {
+      const date = invoiceDate ? new Date(invoiceDate) : new Date();
+      const prefix = format(date, 'yyMMdd');
+      
+      const q = query(collection(db, 'projects'), where('creatorId', '==', user.uid));
+      const snapshot = await getDocs(q);
+      
+      let maxSequence = 0;
+      snapshot.forEach(doc => {
+        const inv = doc.data().invoice;
+        if (inv && inv.number && inv.number.startsWith(prefix)) {
+          // Check if it's the right format YYMMDDXX
+          const seqStr = inv.number.substring(6);
+          const seq = parseInt(seqStr);
+          if (!isNaN(seq) && seq > maxSequence) {
+            maxSequence = seq;
+          }
+        }
+      });
+      
+      const nextSeq = (maxSequence + 1).toString().padStart(2, '0');
+      setInvoiceNumber(`${prefix}${nextSeq}`);
+    } catch (error) {
+      console.error("Error generating invoice number", error);
+    }
+  };
+
+
+
   const saveInvoice = async () => {
     setIsSavingInvoice(true);
     try {
@@ -305,6 +586,8 @@ export default function ProjectDetails({ user }: { user: User }) {
       const total = subtotal + taxAmount;
 
       const invoiceData = {
+        number: invoiceNumber,
+        date: invoiceDate,
         items: invoiceItems,
         dueDate: invoiceDueDate,
         notes: invoiceNotes,
@@ -367,12 +650,21 @@ export default function ProjectDetails({ user }: { user: User }) {
   };
 
   const addInvoiceItem = () => {
-    setInvoiceItems([...invoiceItems, { description: '', amount: 0 }]);
+    setInvoiceItems([...invoiceItems, { description: '', details: '', type: 'fixed', rate: 0, quantity: 1, amount: 0 }]);
   };
 
   const updateInvoiceItem = (index: number, field: keyof InvoiceItem, value: string | number) => {
     const newItems = [...invoiceItems];
-    newItems[index] = { ...newItems[index], [field]: value };
+    const item = { ...newItems[index], [field]: value };
+    
+    // Auto-calculate amount
+    if (item.type === 'fixed') {
+      item.amount = item.rate;
+    } else {
+      item.amount = item.rate * item.quantity;
+    }
+    
+    newItems[index] = item;
     setInvoiceItems(newItems);
   };
 
@@ -380,24 +672,78 @@ export default function ProjectDetails({ user }: { user: User }) {
     setInvoiceItems(invoiceItems.filter((_, i) => i !== index));
   };
 
-  const handleDeleteVersion = async (id: string) => {
-    if (confirm('Are you sure you want to delete this version?')) {
+  const handleDeleteVersion = async (id: string, versionNum: number) => {
+    console.log("Delete function called for:", id, versionNum);
+    
+    try {
+      setIsLoading(true);
+      console.log("Proceeding with deletion of version:", id);
+      
+      const versionDocRef = doc(db, 'versions', id);
+      let versionDoc;
       try {
-        // If we delete the current version, we should probably make the previous one current
-        const versionToDelete = versions.find(v => v.id === id);
-        await deleteDoc(doc(db, 'versions', id));
-        
-        if (versionToDelete?.isCurrent && versions.length > 1) {
-          const previousVersion = versions.find(v => v.id !== id);
-          if (previousVersion) {
-            await updateDoc(doc(db, 'versions', previousVersion.id), { isCurrent: true });
-          }
-        }
-      } catch (error) {
-        console.error("Error deleting version", error);
+        versionDoc = await getDoc(versionDocRef);
+      } catch (err) {
+        throw handleFirestoreError(err, OperationType.GET, `versions/${id}`);
       }
+      
+      if (!versionDoc.exists()) {
+        setVersionToDelete(null);
+        return;
+      }
+      
+      const vData = versionDoc.data();
+      const wasCurrent = vData?.isCurrent;
+
+      const qReqs = query(collection(db, 'change_requests'), where('versionId', '==', id));
+      let reqsSnap;
+      try {
+        reqsSnap = await getDocs(qReqs);
+      } catch (err) {
+        throw handleFirestoreError(err, OperationType.GET, 'change_requests');
+      }
+      
+      if (reqsSnap.size > 0) {
+        const deletePromises = reqsSnap.docs.map(d => deleteDoc(doc(db, 'change_requests', d.id)).catch(e => {
+          throw handleFirestoreError(e, OperationType.DELETE, `change_requests/${d.id}`);
+        }));
+        await Promise.all(deletePromises);
+      }
+      
+      try {
+        await deleteDoc(versionDocRef);
+      } catch (err) {
+        throw handleFirestoreError(err, OperationType.DELETE, `versions/${id}`);
+      }
+      
+      if (wasCurrent) {
+        const qRemaining = query(collection(db, 'versions'), where('projectId', '==', projectId));
+        const remSnap = await getDocs(qRemaining);
+        const remDocs = remSnap.docs
+          .map(d => ({ id: d.id, ...d.data() } as any))
+          .filter(v => v.id !== id)
+          .sort((a, b) => (b.versionNumber || 0) - (a.versionNumber || 0));
+
+        if (remDocs.length > 0) {
+          const next = remDocs[0];
+          await updateDoc(doc(db, 'versions', next.id), { isCurrent: true }).catch(err => {
+            throw handleFirestoreError(err, OperationType.UPDATE, `versions/${next.id}`);
+          });
+        }
+      }
+      
+      setVersionToDelete(null);
+      alert(`Version ${versionNum} deleted.`);
+    } catch (error: any) {
+      console.error("Critical error during version deletion:", error);
+      alert(`Delete Failed: ${error.message}`);
+    } finally {
+      setIsLoading(false);
     }
   };
+
+  const [isLoadingState, setIsLoading] = useState(false);
+  const [versionToDelete, setVersionToDelete] = useState<{id: string, num: number} | null>(null);
 
   const currentVersion = versions.find(v => v.isCurrent);
   const currentRequests = changeRequests.filter(r => r.versionId === currentVersion?.id);
@@ -427,13 +773,25 @@ export default function ProjectDetails({ user }: { user: User }) {
           </div>
           <div className="flex items-center gap-4">
             <ThemeToggle />
-            <button
-              onClick={copyClientLink}
-              className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white transition-colors bg-gray-100 dark:bg-gray-700 px-3 py-1.5 rounded-lg"
-            >
-              <LinkIcon className="w-4 h-4" />
-              <span className="hidden sm:inline">Copy Client Link</span>
-            </button>
+            <div className="flex items-center bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
+              <button
+                onClick={() => copyClientLink(false)}
+                className="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white transition-colors px-2 py-1.5 rounded-md hover:bg-white dark:hover:bg-gray-600 shadow-sm"
+                title="Full access with feedback tools"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Client Link</span>
+              </button>
+              <div className="w-px h-4 bg-gray-300 dark:bg-gray-500 mx-1"></div>
+              <button
+                onClick={() => copyClientLink(true)}
+                className="flex items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white transition-colors px-2 py-1.5 rounded-md hover:bg-white dark:hover:bg-gray-600 shadow-sm"
+                title="Viewer only, no feedback or invoice"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Viewer Link</span>
+              </button>
+            </div>
           </div>
         </div>
         <div className="max-w-5xl mx-auto px-4 flex gap-6 border-t border-gray-100 dark:border-gray-700 print:hidden">
@@ -458,6 +816,50 @@ export default function ProjectDetails({ user }: { user: User }) {
         </div>
       </header>
 
+      {/* Deletion Confirmation Modal */}
+      {versionToDelete && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full p-8 shadow-2xl border border-gray-100 dark:border-gray-700 animate-in fade-in zoom-in duration-200">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mb-4 text-red-600 dark:text-red-400">
+                <Trash2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Delete Version {versionToDelete.num}?</h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-8">
+                This will permanently remove this version and all associated feedback. This action cannot be undone.
+              </p>
+              
+              <div className="flex flex-col w-full gap-3">
+                <button 
+                  onClick={() => {
+                    console.log("Confirmed deletion for:", versionToDelete.id);
+                    handleDeleteVersion(versionToDelete.id, versionToDelete.num);
+                  }}
+                  disabled={isLoadingState}
+                  className="w-full py-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold shadow-lg shadow-red-200 dark:shadow-none transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isLoadingState ? (
+                    <div className="w-5 h-5 border-3 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  ) : (
+                    "Yes, Delete Permanently"
+                  )}
+                </button>
+                <button 
+                  onClick={() => {
+                    console.log("Cancelled deletion");
+                    setVersionToDelete(null);
+                  }}
+                  disabled={isLoadingState}
+                  className="w-full py-3.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-800 dark:text-white rounded-xl font-bold transition-all active:scale-[0.98]"
+                >
+                  No, Keep It
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <main className="max-w-5xl mx-auto px-4 py-8 print:p-0">
         {activeTab === 'overview' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 print:hidden">
@@ -474,7 +876,7 @@ export default function ProjectDetails({ user }: { user: User }) {
                     <button
                       onClick={() => {
                         setDeliveryForm({
-                          link: project.finalDelivery?.link || '',
+                          files: project.finalDelivery?.files || [{ label: 'Master Export', link: project.finalDelivery?.link || '' }],
                           notes: project.finalDelivery?.notes || '',
                           notifyClient: !project.finalDelivery
                         });
@@ -489,23 +891,56 @@ export default function ProjectDetails({ user }: { user: User }) {
 
                 {isEditingDelivery ? (
                   <form onSubmit={saveFinalDelivery} className="space-y-4 bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-green-100 dark:border-green-800">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Download Link (Google Drive, Dropbox, etc.)</label>
-                      <input
-                        type="url"
-                        required
-                        value={deliveryForm.link}
-                        onChange={e => setDeliveryForm({...deliveryForm, link: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 outline-none dark:bg-gray-700 dark:text-white"
-                        placeholder="https://..."
-                      />
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Files to Provide</label>
+                        <button type="button" onClick={addDeliveryFile} className="text-xs text-blue-600 flex items-center gap-1 font-bold">
+                          <Plus className="w-3 h-3" /> Add Another File
+                        </button>
+                      </div>
+                      {deliveryForm.files.map((file, index) => (
+                        <div key={index} className="flex gap-2 items-start bg-gray-50 dark:bg-gray-900/50 p-2 rounded-lg border border-gray-100 dark:border-gray-800">
+                          <div className="flex-1 space-y-2">
+                            <input
+                              type="text"
+                              required
+                              value={file.label}
+                              onChange={e => updateDeliveryFile(index, 'label', e.target.value)}
+                              className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md outline-none dark:bg-gray-700 dark:text-white"
+                              placeholder="File Label (e.g. Master Export)"
+                            />
+                            <input
+                              type="url"
+                              required
+                              value={file.link}
+                              onChange={e => updateDeliveryFile(index, 'link', e.target.value)}
+                              className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md outline-none dark:bg-gray-700 dark:text-white"
+                              placeholder="Download Link (Google Drive, etc.)"
+                            />
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => initiateDriveUpload('final', index)}
+                                className="text-[10px] bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 px-2 py-1 rounded text-gray-500 font-bold flex items-center gap-1"
+                              >
+                                <Upload className={`w-3 h-3 ${(isUploadingToDrive || isAuthenticating) ? 'animate-bounce' : ''}`} /> {isAuthenticating ? 'Signing in...' : isUploadingToDrive ? 'Uploading...' : 'Upload to Drive'}
+                              </button>
+                            </div>
+                          </div>
+                          {deliveryForm.files.length > 1 && (
+                            <button type="button" onClick={() => removeDeliveryFile(index)} className="p-1.5 text-gray-400 hover:text-red-500">
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Notes / Instructions (Optional)</label>
                       <textarea
                         value={deliveryForm.notes}
                         onChange={e => setDeliveryForm({...deliveryForm, notes: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 outline-none h-24 dark:bg-gray-700 dark:text-white"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 outline-none h-24 dark:bg-gray-700 dark:text-white text-sm"
                         placeholder="e.g. Here are the final high-res exports..."
                       />
                     </div>
@@ -544,14 +979,31 @@ export default function ProjectDetails({ user }: { user: User }) {
                         {project.finalDelivery.notes}
                       </p>
                     )}
-                    <a
-                      href={project.finalDelivery.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg font-bold transition-colors shadow-sm"
-                    >
-                      <ArrowUp className="w-5 h-5 rotate-180" /> Download Files
-                    </a>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {project.finalDelivery.files?.map((file: any, i: number) => (
+                          <a
+                            key={i}
+                            href={file.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between gap-3 bg-white dark:bg-gray-800 border border-green-200 dark:border-green-800 px-4 py-3 rounded-xl font-bold transition-all hover:shadow-md hover:border-green-400 group"
+                          >
+                            <span className="truncate text-green-900 dark:text-green-400">{file.label || 'Download File'}</span>
+                            <Download className="w-5 h-5 text-green-600 group-hover:scale-110 transition-transform" />
+                          </a>
+                        ))}
+                        {/* Fallback for old single link format */}
+                        {!project.finalDelivery.files && project.finalDelivery.link && (
+                          <a
+                            href={project.finalDelivery.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg font-bold transition-colors shadow-sm"
+                          >
+                            <ArrowUp className="w-5 h-5 rotate-180" /> Download Files
+                          </a>
+                        )}
+                      </div>
                     <p className="text-xs text-green-700/70 dark:text-green-400/70 flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       Added {project.finalDelivery.createdAt?.toDate ? format(project.finalDelivery.createdAt.toDate(), 'MMM d, yyyy h:mm a') : 'Just now'}
@@ -593,14 +1045,23 @@ export default function ProjectDetails({ user }: { user: User }) {
                   <form onSubmit={handleAddVersion} className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Google Drive Link</label>
-                      <input
-                        type="url"
-                        required
-                        value={newVersion.driveLink}
-                        onChange={e => setNewVersion({...newVersion, driveLink: e.target.value})}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none dark:bg-gray-700 dark:text-white"
-                        placeholder="https://drive.google.com/..."
-                      />
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          required
+                          value={newVersion.driveLink}
+                          onChange={e => setNewVersion({...newVersion, driveLink: e.target.value})}
+                          className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none dark:bg-gray-700 dark:text-white"
+                          placeholder="https://drive.google.com/..."
+                        />
+                        <button
+                          type="button"
+                          onClick={() => initiateDriveUpload('version')}
+                          className="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-gray-600 dark:text-gray-300 flex items-center gap-2 text-xs font-bold"
+                        >
+                          <Upload className={`w-4 h-4 ${(isUploadingToDrive || isAuthenticating) ? 'animate-bounce' : ''}`} /> {isAuthenticating ? 'Auth...' : isUploadingToDrive ? 'Uploading...' : 'Drive'}
+                        </button>
+                      </div>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
@@ -682,10 +1143,16 @@ export default function ProjectDetails({ user }: { user: User }) {
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button 
-                          onClick={() => handleDeleteVersion(currentVersion.id)}
-                          className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            console.log("Trash clicked for current version");
+                            setVersionToDelete({ id: currentVersion.id, num: currentVersion.versionNumber });
+                          }}
+                          className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors bg-gray-50 dark:bg-gray-700/50 rounded-lg relative z-10"
+                          title="Delete this version"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-5 h-5 pointer-events-none" />
                         </button>
                       </div>
                     </div>
@@ -698,6 +1165,19 @@ export default function ProjectDetails({ user }: { user: User }) {
                       allow="autoplay"
                       allowFullScreen
                     ></iframe>
+                    
+                    {/* Fallback overlay for browser blocking cookies */}
+                    <div className="absolute bottom-4 right-4 flex gap-2">
+                       <a 
+                        href={currentVersion.driveLink} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="bg-black/80 hover:bg-black text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 backdrop-blur-sm transition-all"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        Open in Drive
+                      </a>
+                    </div>
                   </div>
                   
                   {currentVersion.creatorNotes && (
@@ -744,10 +1224,16 @@ export default function ProjectDetails({ user }: { user: User }) {
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button 
-                            onClick={() => handleDeleteVersion(version.id)}
-                            className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              console.log("Trash clicked for history version");
+                              setVersionToDelete({ id: version.id, num: version.versionNumber });
+                            }}
+                            className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors bg-gray-50 dark:bg-gray-700/50 rounded-lg relative z-10"
+                            title="Delete this version"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-5 h-5 pointer-events-none" />
                           </button>
                         </div>
                       </div>
@@ -906,6 +1392,8 @@ export default function ProjectDetails({ user }: { user: User }) {
                 <div>
                   <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">INVOICE</h1>
                   <p className="text-gray-600 dark:text-gray-400 font-medium">{project.title}</p>
+                  {invoiceNumber && <p className="text-sm font-bold text-gray-700 dark:text-gray-300 mt-1">Invoice #: {invoiceNumber}</p>}
+                  {invoiceDate && <p className="text-sm text-gray-600 dark:text-gray-400">Date: {format(new Date(invoiceDate), 'MMM d, yyyy')}</p>}
                 </div>
                 <div className="text-right">
                   <h2 className="font-bold text-gray-900 dark:text-white">{creatorProfile?.displayName || 'Creator'}</h2>
@@ -939,7 +1427,35 @@ export default function ProjectDetails({ user }: { user: User }) {
             </div>
 
             <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4 print:hidden">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 print:hidden">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Invoice Number</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={invoiceNumber}
+                      onChange={e => setInvoiceNumber(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none dark:bg-gray-700 dark:text-white"
+                      placeholder="e.g. 24050601"
+                    />
+                    <button 
+                      onClick={generateInvoiceNumber}
+                      title="Auto-generate number"
+                      className="px-2 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
+                    >
+                      <ArrowUp className="w-4 h-4 rotate-90" />
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Invoice Date</label>
+                  <input
+                    type="date"
+                    value={invoiceDate}
+                    onChange={e => setInvoiceDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Due Date</label>
                   <input
@@ -960,33 +1476,72 @@ export default function ProjectDetails({ user }: { user: User }) {
                 </div>
                 
                 <div className="space-y-3 print:space-y-0">
-                  {/* Print Table Header */}
-                  <div className="hidden print:flex border-b border-gray-300 dark:border-gray-700 pb-2 mb-2 font-bold text-gray-900 dark:text-white">
+                  {/* Table Header */}
+                  <div className="flex border-b border-gray-200 dark:border-gray-700 pb-2 mb-2 font-bold text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 px-2">
                     <div className="flex-1">Description</div>
-                    <div className="w-32 text-right">Amount</div>
+                    <div className="w-24 px-2">Type</div>
+                    <div className="w-24 px-2 text-right">Rate</div>
+                    <div className="w-16 px-2 text-center">Qty</div>
+                    <div className="w-28 text-right pr-2">Amount</div>
+                    <div className="w-10 print:hidden"></div>
                   </div>
 
                   {invoiceItems.map((item, index) => (
-                    <div key={index} className="flex gap-3 items-start print:border-b print:border-gray-100 print:py-2">
-                      <input
-                        type="text"
-                        value={item.description}
-                        onChange={e => updateInvoiceItem(index, 'description', e.target.value)}
-                        placeholder="Description (e.g. Video Editing)"
-                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none print:border-none print:p-0 print:bg-transparent dark:bg-gray-700 dark:text-white"
-                      />
-                      <div className="relative w-32 print:text-right">
-                        <span className="absolute left-3 top-2.5 text-gray-500 dark:text-gray-400 print:hidden">$</span>
-                        <input
-                          type="number"
-                          value={item.amount}
-                          onChange={e => updateInvoiceItem(index, 'amount', parseFloat(e.target.value) || 0)}
-                          className="w-full pl-7 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none print:border-none print:p-0 print:bg-transparent print:text-right dark:bg-gray-700 dark:text-white"
+                    <div key={index} className="flex flex-col gap-2 print:border-b print:border-gray-100 print:py-2 px-2 hover:bg-gray-50 dark:hover:bg-gray-700/30 rounded-lg py-2 transition-colors group">
+                      <div className="flex gap-2 items-start">
+                        <div className="flex-1">
+                          <input
+                            type="text"
+                            value={item.description}
+                            onChange={e => updateInvoiceItem(index, 'description', e.target.value)}
+                            placeholder="Description (e.g. Video Production)"
+                            className="w-full px-2 py-1 border-none focus:ring-1 focus:ring-black dark:focus:ring-white rounded outline-none bg-transparent dark:text-white text-sm font-bold"
+                          />
+                        </div>
+                        <div className="w-24">
+                          <select
+                            value={item.type}
+                            onChange={e => updateInvoiceItem(index, 'type', e.target.value as any)}
+                            className="w-full px-1 py-1 border-none bg-transparent text-sm outline-none cursor-pointer focus:ring-1 focus:ring-black dark:focus:ring-white rounded dark:text-gray-300"
+                          >
+                            <option value="fixed">Fixed</option>
+                            <option value="hourly">Hourly</option>
+                            <option value="item">Per Item</option>
+                          </select>
+                        </div>
+                        <div className="w-24 relative">
+                          <span className="absolute left-1 top-1 text-gray-400 text-xs">$</span>
+                          <input
+                            type="number"
+                            value={item.rate}
+                            onChange={e => updateInvoiceItem(index, 'rate', parseFloat(e.target.value) || 0)}
+                            className="w-full pl-3 pr-1 py-1 border-none bg-transparent text-right text-sm outline-none focus:ring-1 focus:ring-black dark:focus:ring-white rounded dark:text-white font-mono"
+                          />
+                        </div>
+                        <div className="w-16">
+                          <input
+                            type="number"
+                            disabled={item.type === 'fixed'}
+                            value={item.quantity}
+                            onChange={e => updateInvoiceItem(index, 'quantity', parseFloat(e.target.value) || 0)}
+                            className={`w-full px-1 py-1 border-none bg-transparent text-center text-sm outline-none focus:ring-1 focus:ring-black dark:focus:ring-white rounded dark:text-white ${item.type === 'fixed' ? 'opacity-20' : ''}`}
+                          />
+                        </div>
+                        <div className="w-28 text-right font-bold text-sm pt-1 pr-2 dark:text-white">
+                          ${item.amount.toFixed(2)}
+                        </div>
+                        <button onClick={() => removeInvoiceItem(index)} className="w-10 p-1 text-gray-300 hover:text-red-600 transition-colors opacity-0 group-hover:opacity-100 print:hidden">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="px-2">
+                        <textarea
+                          placeholder="Additional details (optional)"
+                          value={item.details || ''}
+                          onChange={e => updateInvoiceItem(index, 'details', e.target.value)}
+                          className="w-full px-2 py-1 text-xs border-none bg-transparent dark:text-gray-400 outline-none focus:ring-1 focus:ring-black dark:focus:ring-white rounded resize-none h-10 italic"
                         />
                       </div>
-                      <button onClick={() => removeInvoiceItem(index)} className="p-2 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 transition-colors print:hidden">
-                        <Trash2 className="w-5 h-5" />
-                      </button>
                     </div>
                   ))}
                   {invoiceItems.length === 0 && (

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { User } from 'firebase/auth';
-import { ArrowLeft, Save, Upload, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Save, Upload, Image as ImageIcon, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ThemeToggle } from '../components/ThemeToggle';
 
@@ -55,7 +55,10 @@ export default function AdminSettings({ user }: { user: User }) {
     brandColor: '#000000',
     taxRate: 0,
     taxId: '',
-    businessAddress: ''
+    businessAddress: '',
+    googleDriveFolderId: '',
+    googleClientId: '',
+    googleApiKey: ''
   });
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -215,6 +218,65 @@ export default function AdminSettings({ user }: { user: User }) {
 
             <hr className="border-gray-100 dark:border-gray-700" />
 
+            <div>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Cloud Integrations</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                Connect your Google Drive to allow direct file uploads. 
+                <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="ml-1 text-black dark:text-white underline font-medium">
+                  Get your API Key & Client ID here <ExternalLink className="w-3 h-3 inline" />
+                </a>
+              </p>
+              
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6 border border-blue-100 dark:border-blue-800">
+                <h4 className="text-xs font-bold text-blue-800 dark:text-blue-400 uppercase tracking-wider mb-2">Setup Instructions</h4>
+                <ul className="text-xs text-blue-700 dark:text-blue-300 space-y-1 list-disc pl-4">
+                  <li>Enable **Google Drive API** and **Google Picker API** in Cloud Console.</li>
+                  <li>Create **OAuth Client ID** (Web application).</li>
+                  <li>Add your app URL to **Authorized JavaScript origins**.</li>
+                  <li>Create an **API Key** (restrict usage to Google Drive API if possible).</li>
+                </ul>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Google Drive Root Folder ID</label>
+                  <input
+                    type="text"
+                    value={profile.googleDriveFolderId}
+                    onChange={e => setProfile({...profile, googleDriveFolderId: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none dark:bg-gray-700 dark:text-white"
+                    placeholder="e.g. 1aBCdEfGhIjKlMnOpQrStUvWxYz"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Files will be organized in subfolders: Client Name / Project Title</p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Google Client ID</label>
+                    <input
+                      type="text"
+                      value={profile.googleClientId}
+                      onChange={e => setProfile({...profile, googleClientId: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none dark:bg-gray-700 dark:text-white"
+                      placeholder="Enter your Google Client ID"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Google API Key</label>
+                    <input
+                      type="password"
+                      value={profile.googleApiKey}
+                      onChange={e => setProfile({...profile, googleApiKey: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white outline-none dark:bg-gray-700 dark:text-white"
+                      placeholder="Enter your Google API Key"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <hr className="border-gray-100 dark:border-gray-700" />
+            
             <div>
               <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Creator Details (Optional)</h2>
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">These details will be visible to clients in the review portal.</p>
