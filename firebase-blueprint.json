@@ -110,6 +110,20 @@
         "createdAt": { "type": "timestamp" }
       },
       "required": ["name", "creatorId", "createdAt"]
+    },
+    "StakeholderSuggestion": {
+      "title": "Stakeholder Suggestion",
+      "description": "Suggestion or minor correction from a viewer/stakeholder.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "versionId": { "type": "string" },
+        "suggestion": { "type": "string" },
+        "viewerName": { "type": "string" },
+        "viewerEmail": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["projectId", "versionId", "suggestion", "viewerName", "viewerEmail", "createdAt"]
     }
   },
   "firestore": {
@@ -140,6 +154,10 @@
     "clients/{clientId}": {
       "schema": "Client",
       "description": "Stores clients for creators."
+    },
+    "viewer_suggestions/{suggestionId}": {
+      "schema": "StakeholderSuggestion",
+      "description": "Stores read-only stakeholder suggestions."
     }
   }
 }

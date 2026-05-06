@@ -52,5 +52,11 @@ service cloud.firestore {
       allow create: if true;
       allow update, delete: if true;
     }
+
+    match /viewer_suggestions/{suggestionId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isAuthenticated();
+    }
   }
 }

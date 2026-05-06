@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, onSnapshot, addDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Lock, CheckCircle, AlertCircle, ExternalLink, Clock, Send, Upload, X, Plus, FileText, Download, Printer, Eye } from 'lucide-react';
+import { Lock, CheckCircle, AlertCircle, ExternalLink, Clock, Send, Upload, X, Plus, FileText, Download, Printer, Eye, Copy, Users } from 'lucide-react';
 import { format } from 'date-fns';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { sendEmail } from '../lib/email';
@@ -84,9 +84,12 @@ export default function ClientPortal() {
   const [versions, setVersions] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
   const [changeRequests, setChangeRequests] = useState<any[]>([]);
+  const [viewerSuggestions, setViewerSuggestions] = useState<any[]>([]);
   const [error, setError] = useState('');
 
   const [newChangeText, setNewChangeText] = useState('');
+  const [suggestionText, setSuggestionText] = useState('');
+  const [viewerEmail, setViewerEmail] = useState('');
   const [isMajorChange, setIsMajorChange] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [clientNotes, setClientNotes] = useState('');
@@ -125,6 +128,13 @@ export default function ClientPortal() {
     fetchProjectAndCreator();
   }, [projectId]);
 
+  useEffect(() => {
+    if (isViewerMode && project) {
+      setIsAuthenticated(true);
+      if (!reviewerName) setReviewerName('Guest Viewer');
+    }
+  }, [isViewerMode, project]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!project || !reviewerName.trim()) return;
@@ -158,15 +168,23 @@ export default function ClientPortal() {
       setChangeRequests(rData.sort((a, b) => a.createdAt?.toMillis() - b.createdAt?.toMillis()));
     });
 
+    const qSuggestions = query(collection(db, 'viewer_suggestions'), where('projectId', '==', projectId));
+    const unsubSuggestions = onSnapshot(qSuggestions, (snapshot) => {
+      const sData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+      setViewerSuggestions(sData.sort((a, b) => a.createdAt?.toMillis() - b.createdAt?.toMillis()));
+    });
+
     return () => {
       unsubVersions();
       unsubAssets();
       unsubRequests();
+      unsubSuggestions();
     };
   }, [isAuthenticated, projectId]);
 
   const currentVersion = versions.find(v => v.isCurrent);
   const currentRequests = changeRequests.filter(r => r.versionId === currentVersion?.id);
+  const currentSuggestions = viewerSuggestions.filter(s => s.versionId === currentVersion?.id);
   const brandColor = creatorProfile?.brandColor || '#000000';
   const brandRgb = hexToRgb(brandColor);
 
@@ -221,6 +239,55 @@ export default function ClientPortal() {
     } catch (err) {
       console.error(err);
       alert('Failed to add request');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const submitViewerSuggestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!suggestionText.trim() || !currentVersion || !reviewerName.trim() || !viewerEmail.trim()) return;
+    setIsSubmitting(true);
+
+    try {
+      await addDoc(collection(db, 'viewer_suggestions'), {
+        projectId,
+        versionId: currentVersion.id,
+        suggestion: suggestionText.trim(),
+        viewerName: reviewerName.trim(),
+        viewerEmail: viewerEmail.trim(),
+        createdAt: serverTimestamp()
+      });
+
+      // Notify creator
+      if (creatorProfile?.contactEmail) {
+        try {
+          await sendEmail(
+            creatorProfile.contactEmail,
+            `Stakeholder Suggestion: ${project.title}`,
+            `
+              <div style="font-family: sans-serif; max-w: 600px; margin: 0 auto;">
+                <h2>New stakeholder suggestion for ${project.title}</h2>
+                <p><strong>${reviewerName.trim()}</strong> (${viewerEmail.trim()}) left a suggestion for Version ${currentVersion.versionNumber}:</p>
+                <blockquote style="border-left: 4px solid #3b82f6; padding-left: 16px; color: #555; background: #f0f9ff; padding: 12px;">
+                  ${suggestionText.trim()}
+                </blockquote>
+                <div style="margin-top: 30px;">
+                  <a href="${window.location.origin}/project/${projectId}" style="background-color: #3b82f6; color: #fff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">View Suggestions</a>
+                </div>
+              </div>
+            `
+          );
+        } catch (emailError) {
+          console.error("Failed to send notification email", emailError);
+        }
+      }
+
+      setSuggestionText('');
+      alert('Your suggestion has been submitted to the project owner and client!');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to submit suggestion');
     } finally {
       setIsSubmitting(false);
     }
@@ -385,7 +452,7 @@ export default function ClientPortal() {
                 <Eye className="w-4 h-4" /> Viewer Mode
               </div>
             ) : (
-              <>
+              <div className="flex items-center gap-4">
                 <span className="text-sm font-medium text-gray-600 dark:text-gray-300 hidden sm:inline">Reviewing as: <span className="text-black dark:text-white">{reviewerName}</span></span>
                 <div 
                   className="text-sm font-bold px-3 py-1.5 rounded-lg"
@@ -393,13 +460,100 @@ export default function ClientPortal() {
                 >
                   {revisionsLeft} revisions remaining
                 </div>
-              </>
+                <button
+                  onClick={() => {
+                    const url = `${window.location.origin}/p/${projectId}?mode=viewer`;
+                    navigator.clipboard.writeText(url);
+                    alert("Viewer link copied!");
+                  }}
+                  className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-sm active:scale-95"
+                >
+                  <Users className="w-4 h-4" /> Share
+                </button>
+              </div>
             )}
           </div>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-8 print:p-0">
+        
+        {/* Stakeholder Sharing Section for Clients */}
+        {!isViewerMode && (
+          <div className="relative group overflow-hidden">
+            {/* Background Decoration */}
+            <div className="absolute top-0 right-0 -transe-y-12 translate-x-12 w-64 h-64 bg-blue-500/10 dark:bg-blue-400/5 rounded-full blur-[80px] pointer-events-none" />
+            <div className="absolute bottom-0 left-0 transe-y-12 -translate-x-12 w-48 h-48 bg-indigo-500/10 dark:bg-indigo-400/5 rounded-full blur-[60px] pointer-events-none" />
+            
+            <div className="relative bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700/50 rounded-3xl p-8 shadow-xl shadow-blue-900/5 dark:shadow-none transition-all">
+              <div className="flex flex-col lg:flex-row lg:items-center gap-8">
+                {/* Text Context */}
+                <div className="flex-1 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-blue-50 dark:bg-blue-500/10 rounded-xl text-blue-600 dark:text-blue-400 shadow-inner">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <h2 className="text-xl font-extrabold text-gray-900 dark:text-white tracking-tight">
+                      Share with Stakeholders
+                    </h2>
+                  </div>
+                  
+                  <p className="text-gray-600 dark:text-gray-400 leading-relaxed max-w-xl">
+                    Need feedback from your team? Copy this <span className="text-blue-600 dark:text-blue-400 font-bold">Stakeholder Link</span> to share a simplified, read-only view that hides billing and protects your passwords.
+                  </p>
+
+                  <div className="flex flex-wrap gap-4 items-center pt-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-gray-400 px-2 py-1 bg-gray-50 dark:bg-gray-700/30 rounded-md border border-gray-100 dark:border-gray-700">
+                      <Eye className="w-3 h-3" /> Read-only
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-gray-400 px-2 py-1 bg-gray-50 dark:bg-gray-700/30 rounded-md border border-gray-100 dark:border-gray-700">
+                      <Lock className="w-3 h-3" /> Password-free
+                    </div>
+                  </div>
+                </div>
+
+                {/* Link Control Area */}
+                <div className="w-full lg:w-auto min-w-[380px] space-y-3">
+                  <div className="group/input relative flex items-center">
+                    <div className="absolute left-4 text-gray-400 group-focus-within/input:text-blue-500 transition-colors">
+                      <ExternalLink className="w-4 h-4" />
+                    </div>
+                    <input 
+                      readOnly
+                      value={`${window.location.origin}/p/${projectId}?mode=viewer`}
+                      className="w-full bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 pl-11 pr-4 py-3.5 rounded-2xl text-sm font-mono text-gray-500 dark:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-default"
+                    />
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      const url = `${window.location.origin}/p/${projectId}?mode=viewer`;
+                      navigator.clipboard.writeText(url);
+                      // Visual feedback button animation or notification could go here
+                      const btn = document.getElementById('copy-stakeholder-btn');
+                      if (btn) {
+                        const originalContent = btn.innerHTML;
+                        btn.classList.add('bg-green-600', 'scale-[0.98]');
+                        btn.classList.remove('bg-blue-600');
+                        btn.innerHTML = `<span class="flex items-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Copied!</span>`;
+                        setTimeout(() => {
+                          btn.classList.remove('bg-green-600', 'scale-[0.98]');
+                          btn.classList.add('bg-blue-600');
+                          btn.innerHTML = originalContent;
+                        }, 2000);
+                      }
+                    }}
+                    id="copy-stakeholder-btn"
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black text-sm shadow-xl shadow-blue-500/20 dark:shadow-none transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copy Stakeholder Link
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         
         {project.finalDelivery && (
           <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-6 print:hidden shadow-sm">
@@ -485,7 +639,100 @@ export default function ClientPortal() {
                 )}
               </div>
 
-              {currentVersion.status !== 'approved' && (
+              {/* Stakeholder Suggestions Section */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors">
+                <div className="p-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
+                  <div>
+                    <h3 className="font-bold text-gray-900 dark:text-white">Stakeholder Input</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Collaborative suggestions and minor corrections.</p>
+                  </div>
+                  <Users className="w-5 h-5 text-blue-500" />
+                </div>
+
+                <div className="p-6">
+                  {isViewerMode && currentVersion.status !== 'approved' && (
+                    <form onSubmit={submitViewerSuggestion} className="mb-8 space-y-4 bg-blue-50/50 dark:bg-blue-900/10 p-5 rounded-2xl border border-blue-100 dark:border-blue-900/30">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-blue-700 dark:text-blue-400 uppercase mb-1">Your Name</label>
+                          <input 
+                            required
+                            type="text"
+                            value={reviewerName === 'Guest Viewer' ? '' : reviewerName}
+                            onChange={e => setReviewerName(e.target.value)}
+                            placeholder="Jane Doe"
+                            className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-800 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-blue-700 dark:text-blue-400 uppercase mb-1">Your Email</label>
+                          <input 
+                            required
+                            type="email"
+                            value={viewerEmail}
+                            onChange={e => setViewerEmail(e.target.value)}
+                            placeholder="jane@example.com"
+                            className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-800 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none dark:text-white"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-blue-700 dark:text-blue-400 uppercase mb-1">Suggestion / Minor Correction</label>
+                        <textarea 
+                          required
+                          value={suggestionText}
+                          onChange={e => setSuggestionText(e.target.value)}
+                          placeholder="e.g., The logo at 0:12 looks a bit small, can we enlarge it?"
+                          className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-800 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 outline-none h-24 resize-none dark:text-white"
+                        />
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          type="submit"
+                          disabled={isSubmitting || !suggestionText.trim() || !viewerEmail.trim() || !reviewerName.trim() || reviewerName === 'Guest Viewer'}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-xl font-bold text-sm transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                        >
+                          <Send className="w-4 h-4" />
+                          {isSubmitting ? 'Submitting...' : 'Submit Suggestion'}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+
+                  {currentSuggestions.length === 0 ? (
+                    <div className="text-center py-12">
+                      <div className="bg-gray-50 dark:bg-gray-700/30 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <Users className="w-6 h-6 text-gray-300" />
+                      </div>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">No suggestions from stakeholders yet.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {currentSuggestions.map(suggestion => (
+                        <div key={suggestion.id} className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-700 flex flex-col justify-between shadow-sm">
+                          <p className="text-sm text-gray-800 dark:text-gray-200 mb-4 leading-relaxed italic">"{suggestion.suggestion}"</p>
+                          <div className="flex items-center justify-between mt-auto pt-3 border-t border-gray-200/50 dark:border-gray-600/50">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-[10px] font-bold text-blue-600 dark:text-blue-400 shrink-0">
+                                {suggestion.viewerName.charAt(0)}
+                              </div>
+                              <div className="truncate">
+                                <p className="text-[11px] font-bold text-gray-900 dark:text-white leading-none truncate">{suggestion.viewerName}</p>
+                                <p className="text-[10px] text-gray-500 dark:text-gray-500 truncate">{suggestion.viewerEmail}</p>
+                              </div>
+                            </div>
+                            <span className="text-[10px] text-gray-400 shrink-0 ml-2">
+                              {suggestion.createdAt ? format(suggestion.createdAt.toDate(), 'MMM d') : ''}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {currentVersion.status !== 'approved' && !isViewerMode && (
                 <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 transition-colors">
                   {!isApproving ? (
                     <div className="flex items-center justify-between">
@@ -752,50 +999,52 @@ export default function ClientPortal() {
           </div>
         )}
 
-        <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden print:hidden transition-colors">
-          <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
-            <div>
-              <h3 className="text-lg font-bold text-gray-900 dark:text-white">Essential Elements</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Upload logos, photos, or assets needed for the project.</p>
+        {!isViewerMode && (
+          <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 overflow-hidden print:hidden transition-colors">
+            <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center" style={{ backgroundColor: `rgba(${brandRgb}, 0.03)` }}>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Essential Elements</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Upload logos, photos, or assets needed for the project.</p>
+              </div>
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingAsset}
+                className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm"
+              >
+                <Upload className="w-4 h-4" />
+                {isUploadingAsset ? 'Uploading...' : 'Upload Asset'}
+              </button>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleFileUpload} 
+                accept="image/*" 
+                className="hidden" 
+              />
             </div>
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploadingAsset}
-              className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-sm"
-            >
-              <Upload className="w-4 h-4" />
-              {isUploadingAsset ? 'Uploading...' : 'Upload Asset'}
-            </button>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleFileUpload} 
-              accept="image/*" 
-              className="hidden" 
-            />
+            
+            {assets.length > 0 && (
+              <div className="p-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                {assets.map(asset => (
+                  <div key={asset.id} className="relative group border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden shadow-sm">
+                    <img src={asset.data} alt={asset.fileName} className="w-full h-32 object-cover" />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <button 
+                        onClick={() => deleteAsset(asset.id)}
+                        className="bg-red-500 text-white p-2 rounded-full hover:bg-red-600 transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[10px] p-1 truncate">
+                      {asset.fileName}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          
-          {assets.length > 0 && (
-            <div className="p-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-              {assets.map(asset => (
-                <div key={asset.id} className="relative group border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden shadow-sm">
-                  <img src={asset.data} alt={asset.fileName} className="w-full h-32 object-cover" />
-                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <button 
-                      onClick={() => deleteAsset(asset.id)}
-                      className="bg-red-500 text-white p-2 rounded-full hover:bg-red-600 transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[10px] p-1 truncate">
-                    {asset.fileName}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        )}
 
         {pastVersions.length > 0 && (
           <div className="mt-8 print:hidden">
