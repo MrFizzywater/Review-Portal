@@ -47,6 +47,7 @@ export default function CreatorDashboard({ user }: { user: User }) {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [collapsedClients, setCollapsedClients] = useState<Set<string>>(new Set());
+  const [isAccordionMode, setIsAccordionMode] = useState(true);
   
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [newProject, setNewProject] = useState<any>({ title: '', clientId: '', clientName: '', password: '', maxRevisions: 3 });
@@ -213,6 +214,12 @@ export default function CreatorDashboard({ user }: { user: User }) {
       if (next.has(clientName)) {
         next.delete(clientName);
       } else {
+        if (isAccordionMode) {
+          // In accordion mode, we collapse everyone else
+          const clientsToCollapse = new Set(Array.from(new Set(projects.map(p => p.clientName || 'No Client'))));
+          clientsToCollapse.delete(clientName);
+          return clientsToCollapse;
+        }
         next.add(clientName);
       }
       return next;
@@ -227,7 +234,7 @@ export default function CreatorDashboard({ user }: { user: User }) {
             <div className="w-8 h-8 bg-black dark:bg-white rounded-lg flex items-center justify-center">
               <Folder className="w-4 h-4 text-white dark:text-black" />
             </div>
-            <span className="font-bold text-gray-900 dark:text-white">Review Portal</span>
+            <span className="font-bold text-gray-900 dark:text-white">Media Review Portal</span>
           </div>
           <div className="flex items-center gap-4">
             <ThemeToggle />
@@ -283,12 +290,46 @@ export default function CreatorDashboard({ user }: { user: User }) {
                 />
               </div>
 
-              <button
-                onClick={() => setIsCreatingProject(true)}
-                className="bg-black dark:bg-white text-white dark:text-black px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors shrink-0"
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setEditingClient(null);
+                    setClientForm({ name: '', company: '', contactPerson: '', email: '', phone: '', address: '', street: '', city: '', state: '', zip: '', country: '', url: '', logoUrl: '' });
+                    setIsCreatingClient(true);
+                  }}
+                  className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shrink-0"
+                >
+                  <Users className="w-4 h-4" />
+                  New Client
+                </button>
+                <button
+                  onClick={() => setIsCreatingProject(true)}
+                  className="bg-black dark:bg-white text-white dark:text-black px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  New Project
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end items-center gap-4 mb-4">
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">Accordion Mode</div>
+                <div 
+                  onClick={() => setIsAccordionMode(!isAccordionMode)}
+                  className={`relative w-8 h-4 rounded-full transition-colors ${isAccordionMode ? 'bg-black dark:bg-white' : 'bg-gray-200 dark:bg-gray-700'}`}
+                >
+                  <div className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full transition-transform ${isAccordionMode ? 'translate-x-4 bg-white dark:bg-black' : 'bg-white'}`} />
+                </div>
+              </label>
+              <div className="w-px h-3 bg-gray-200 dark:bg-gray-700" />
+              <button 
+                onClick={() => setCollapsedClients(new Set(Array.from(new Set(projects.map(p => p.clientName || 'No Client')))))}
+                className="text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-black dark:hover:text-white flex items-center gap-1.5 transition-colors"
+                title="Collapse all sections"
               >
-                <Plus className="w-4 h-4" />
-                New Project
+                <ChevronUp className="w-3.5 h-3.5" />
+                Collapse All
               </button>
             </div>
 
@@ -407,28 +448,78 @@ export default function CreatorDashboard({ user }: { user: User }) {
                 .sort(([a], [b]) => a.localeCompare(b))
                 .map(([clientName, clientProjects]: [string, Project[]]) => {
                   const isCollapsed = collapsedClients.has(clientName);
+                  const client = clients.find(c => c.name === clientName);
+
                   return (
                     <div key={clientName} className="mb-6 bg-white dark:bg-gray-800/50 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm transition-all">
-                      <button 
-                        onClick={() => toggleClientCollapse(clientName)}
-                        className="w-full flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-400 group-hover:text-black dark:group-hover:text-white transition-colors">
-                            <Users className="w-4 h-4" />
+                      <div className={`flex items-center justify-between p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group ${!isCollapsed ? 'border-b border-gray-50 dark:border-gray-700/50' : ''}`}>
+                        <button 
+                          onClick={() => toggleClientCollapse(clientName)}
+                          className="flex-1 flex items-center gap-3 text-left"
+                        >
+                          <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden shrink-0">
+                            {client?.logoUrl ? (
+                              <img src={client.logoUrl} alt={clientName} className="w-full h-full object-cover" />
+                            ) : (
+                              <Users className="w-5 h-5 text-gray-400" />
+                            )}
                           </div>
-                          <div className="text-left">
-                            <h2 className="font-bold text-gray-900 dark:text-white">{clientName}</h2>
-                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">{clientProjects.length} {clientProjects.length === 1 ? 'Project' : 'Projects'}</p>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h2 className="font-bold text-gray-900 dark:text-white">{clientName}</h2>
+                              <span className="text-[10px] bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded font-black text-gray-500 uppercase tracking-tighter">
+                                {clientProjects.length}
+                              </span>
+                            </div>
+                            {client && (
+                              <div className="flex flex-wrap gap-x-3 gap-y-1 mt-0.5">
+                                {client.contactPerson && <p className="text-[10px] text-gray-500 font-medium">Contact: {client.contactPerson}</p>}
+                                {client.email && <p className="text-[10px] text-gray-500">{client.email}</p>}
+                              </div>
+                            )}
                           </div>
+                        </button>
+                        
+                        <div className="flex items-center gap-2">
+                          {client && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingClient(client);
+                                setClientForm({
+                                  name: client.name,
+                                  company: client.company || '',
+                                  contactPerson: client.contactPerson || '',
+                                  email: client.email || '',
+                                  phone: client.phone || '',
+                                  address: client.address || '',
+                                  street: client.street || '',
+                                  city: client.city || '',
+                                  state: client.state || '',
+                                  zip: client.zip || '',
+                                  country: client.country || '',
+                                  url: client.url || '',
+                                  logoUrl: client.logoUrl || ''
+                                });
+                                setIsCreatingClient(true);
+                              }}
+                              className="p-2 text-gray-400 hover:text-blue-500 hover:bg-white dark:hover:bg-gray-800 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                              title="Edit Client Info"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => toggleClientCollapse(clientName)}
+                            className="p-1.5 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-400 transform transition-transform"
+                          >
+                            {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                          </button>
                         </div>
-                        <div className="p-1.5 rounded-lg bg-gray-50 dark:bg-gray-700 text-gray-400 transform transition-transform">
-                          {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-                        </div>
-                      </button>
+                      </div>
                       
                       {!isCollapsed && (
-                        <div className="p-6 pt-0 border-t border-gray-50 dark:border-gray-700/50">
+                        <div className="p-6 pt-0">
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
                             {clientProjects.map(project => (
                               <div
