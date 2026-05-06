@@ -502,6 +502,7 @@ export default function CreatorDashboard({ user }: { user: User }) {
                                   logoUrl: client.logoUrl || ''
                                 });
                                 setIsCreatingClient(true);
+                                setActiveTab('clients');
                               }}
                               className="p-2 text-gray-400 hover:text-blue-500 hover:bg-white dark:hover:bg-gray-800 rounded-lg transition-all opacity-0 group-hover:opacity-100"
                               title="Edit Client Info"
