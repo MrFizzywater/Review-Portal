@@ -336,36 +336,41 @@ export default function ProjectDetails({ user }: { user: User }) {
     if (!projectId) return;
 
     const fetchProject = async () => {
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      if (userDoc.exists()) {
-        setCreatorProfile(userDoc.data());
-      }
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (userDoc.exists()) {
+          setCreatorProfile(userDoc.data());
+        }
 
-      const docRef = doc(db, 'projects', projectId);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = { id: docSnap.id, ...docSnap.data() } as any;
-        setProject(data);
-        setEditForm({ title: data.title || '', clientName: data.clientName || '', clientEmail: data.clientEmail || '', password: data.password || '', clientId: data.clientId || '' });
-        
-        if (data.clientId) {
-          const clientDoc = await getDoc(doc(db, 'clients', data.clientId));
-          if (clientDoc.exists()) {
-            setClientDetails({ id: clientDoc.id, ...clientDoc.data() });
+        const docRef = doc(db, 'projects', projectId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = { id: docSnap.id, ...docSnap.data() } as any;
+          setProject(data);
+          setEditForm({ title: data.title || '', clientName: data.clientName || '', clientEmail: data.clientEmail || '', password: data.password || '', clientId: data.clientId || '' });
+          
+          if (data.clientId) {
+            const clientDoc = await getDoc(doc(db, 'clients', data.clientId));
+            if (clientDoc.exists()) {
+              setClientDetails({ id: clientDoc.id, ...clientDoc.data() });
+            }
+          }
+
+          if (data.invoice) {
+            setInvoiceItems(data.invoice.items || []);
+            setInvoiceNumber(data.invoice.number || '');
+            setInvoiceDate(data.invoice.date || format(new Date(), 'yyyy-MM-dd'));
+            setInvoiceDueDate(data.invoice.dueDate || '');
+            setInvoiceNotes(data.invoice.notes || '');
+            setInvoiceStatus(data.invoice.status || 'draft');
+            setAmountPaid(data.invoice.amountPaid || 0);
           }
         }
-
-        if (data.invoice) {
-          setInvoiceItems(data.invoice.items || []);
-          setInvoiceNumber(data.invoice.number || '');
-          setInvoiceDate(data.invoice.date || format(new Date(), 'yyyy-MM-dd'));
-          setInvoiceDueDate(data.invoice.dueDate || '');
-          setInvoiceNotes(data.invoice.notes || '');
-          setInvoiceStatus(data.invoice.status || 'draft');
-          setAmountPaid(data.invoice.amountPaid || 0);
-        }
+      } catch (error) {
+        console.error("Error fetching project details:", error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     fetchProject();
 
@@ -373,29 +378,39 @@ export default function ProjectDetails({ user }: { user: User }) {
     const unsubVersions = onSnapshot(qVersions, (snapshot) => {
       const vData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
       setVersions(vData.sort((a, b) => b.versionNumber - a.versionNumber));
+    }, (error) => {
+      console.error("Error with versions snapshot:", error);
     });
 
     const qRequests = query(collection(db, 'change_requests'), where('projectId', '==', projectId));
     const unsubRequests = onSnapshot(qRequests, (snapshot) => {
       const rData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
       setChangeRequests(rData.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis()));
+    }, (error) => {
+      console.error("Error with change requests snapshot:", error);
     });
 
     const qAssets = query(collection(db, 'project_assets'), where('projectId', '==', projectId));
     const unsubAssets = onSnapshot(qAssets, (snapshot) => {
       const aData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
       setAssets(aData.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis()));
+    }, (error) => {
+      console.error("Error with project assets snapshot:", error);
     });
 
     const qSuggestions = query(collection(db, 'viewer_suggestions'), where('projectId', '==', projectId));
     const unsubSuggestions = onSnapshot(qSuggestions, (snapshot) => {
       const sData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
       setViewerSuggestions(sData.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis()));
+    }, (error) => {
+      console.error("Error with viewer suggestions snapshot:", error);
     });
 
     const qClients = query(collection(db, 'clients'), where('creatorId', '==', user.uid));
     const unsubClients = onSnapshot(qClients, (snapshot) => {
       setClients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      console.error("Error with clients snapshot:", error);
     });
 
     return () => {
