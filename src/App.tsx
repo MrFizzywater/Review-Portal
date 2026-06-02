@@ -39,11 +39,13 @@ export default function App() {
 function Login() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showConfigOptions, setShowConfigOptions] = useState(false);
-  const [customConfig, setCustomConfig] = useState('');
+  const [customConfig, setCustomConfig] = useState(() => localStorage.getItem('custom_firebase_config') || '');
+
+  const isCustomActive = !!localStorage.getItem('custom_firebase_config');
 
   const handleLogin = async () => {
     setErrorMsg(null);
-    const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
+    const { signInWithPopup } = await import('firebase/auth');
     const { auth, googleProvider } = await import('./firebase');
     try {
       await signInWithPopup(auth, googleProvider);
@@ -52,6 +54,24 @@ function Login() {
       console.error("Login failed", error);
       setErrorMsg(error.message || "An unknown error occurred during login.");
     }
+  };
+
+  const handleClearAllCache = async () => {
+    localStorage.clear();
+    sessionStorage.clear();
+    try {
+      if (window.indexedDB && typeof window.indexedDB.databases === 'function') {
+        const dbs = await window.indexedDB.databases();
+        dbs.forEach(database => {
+          if (database.name && (database.name.includes('firebase') || database.name.includes('firestore') || database.name.includes('auth'))) {
+            window.indexedDB.deleteDatabase(database.name);
+          }
+        });
+      }
+    } catch (e) {
+      console.warn("Failed to delete indexedDB databases:", e);
+    }
+    window.location.reload();
   };
 
   const handleSaveConfig = () => {
@@ -74,10 +94,27 @@ function Login() {
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Creator Login</h1>
         <p className="text-gray-500 dark:text-gray-400 mb-6">Sign in to manage your client review portals.</p>
         
+        {isCustomActive && (
+          <div className="mb-4 p-2.5 bg-amber-50 dark:bg-amber-950/35 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs rounded-lg font-medium">
+            ⚠️ Custom Firebase config is currently ACTIVE.
+          </div>
+        )}
+
         {errorMsg && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg text-left break-words">
-            <strong>Login Error:</strong><br/>
-            {errorMsg}
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 text-sm rounded-lg text-left break-words">
+            <strong className="block mb-1">Login Error:</strong>
+            <span className="text-xs font-mono">{errorMsg}</span>
+            <div className="mt-3 pt-2.5 border-t border-red-100 dark:border-red-900/50 flex flex-col gap-1 text-[11px] leading-snug">
+              <p className="text-red-600 dark:text-red-400">
+                Are you seeing a "suspended" key error? The browser may have cached stale auth credentials or the old Firebase instance config.
+              </p>
+              <button
+                onClick={handleClearAllCache}
+                className="mt-1.5 text-xs font-bold bg-red-100 dark:bg-red-900/40 hover:bg-red-200 dark:hover:bg-red-800/60 text-red-700 dark:text-red-200 px-3 py-1.5 rounded transition-colors self-start"
+              >
+                Reset Browser Storage & Reload
+              </button>
+            </div>
           </div>
         )}
 
@@ -105,7 +142,7 @@ function Login() {
               value={customConfig}
               onChange={(e) => setCustomConfig(e.target.value)}
               placeholder='{ "apiKey": "...", "authDomain": "...", ... }'
-              className="w-full text-xs font-mono p-2 border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-800 focus:ring-1"
+              className="w-full text-xs font-mono p-2 border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-800 focus:ring-1 text-gray-800 dark:text-white"
               rows={6}
             />
             <div className="flex justify-end gap-2 mt-3">
