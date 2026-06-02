@@ -76,21 +76,7 @@ export const googleProvider = new GoogleAuthProvider();
 export async function initFirebase() {
   let configToUse = { ...defaultFirebaseConfig };
 
-  // 1. Prioritize dynamic fetch from backend API (dynamic runtime config from Coolify env variables)
-  try {
-    const res = await fetch('/api/firebase-config');
-    if (res.ok) {
-      const serverConfig = await res.json();
-      // Only use if a valid API Key was fetched from the backend env
-      if (serverConfig.apiKey && !serverConfig.apiKey.includes('PLACEHOLDER') && serverConfig.apiKey.trim() !== "") {
-        configToUse = { ...configToUse, ...serverConfig };
-      }
-    }
-  } catch (error) {
-    console.warn("Failed to fetch runtime backend firebase-config:", error);
-  }
-
-  // 2. Fallback to build-time environment variables in process.env
+  // 1. First fallback: build-time environment variables in process.env (baked by Vite)
   const buildTimeConfig = {
     apiKey: process.env.FIREBASE_API_KEY,
     authDomain: process.env.FIREBASE_AUTH_DOMAIN,
@@ -106,6 +92,23 @@ export async function initFirebase() {
     if (val && !val.includes('PLACEHOLDER') && val.trim() !== "") {
       (configToUse as any)[key] = val;
     }
+  }
+
+  // 2. High-priority runtime config: fetch from backend API (dynamic env variables from Coolify/Docker at runtime)
+  try {
+    const res = await fetch('/api/firebase-config');
+    if (res.ok) {
+      const serverConfig = await res.json();
+      // Overwrite the build-time ones with any valid keys supplied by the active container environment
+      for (const key of Object.keys(serverConfig)) {
+        const val = serverConfig[key];
+        if (val && !val.includes('PLACEHOLDER') && val.trim() !== "") {
+          (configToUse as any)[key] = val;
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("Failed to fetch runtime backend firebase-config:", error);
   }
 
   // 3. Fallback / Merge with custom config from localStorage override (if any is active)

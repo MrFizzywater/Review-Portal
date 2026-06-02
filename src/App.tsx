@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from './firebase';
@@ -27,7 +27,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={user ? <CreatorDashboard user={user} /> : <Navigate to="/login" />} />
-        <Route path="/login" element={<Login />} />
+        <Route path="/login" element={user ? <Navigate to="/" /> : <Login />} />
         <Route path="/project/:projectId" element={user ? <ProjectDetails user={user} /> : <Navigate to="/login" />} />
         <Route path="/settings" element={user ? <AdminSettings user={user} /> : <Navigate to="/login" />} />
         <Route path="/p/:projectId" element={<ClientPortal />} />
@@ -37,6 +37,7 @@ export default function App() {
 }
 
 function Login() {
+  const navigate = useNavigate();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showConfigOptions, setShowConfigOptions] = useState(false);
   const [customConfig, setCustomConfig] = useState(() => localStorage.getItem('custom_firebase_config') || '');
@@ -49,7 +50,7 @@ function Login() {
     const { auth, googleProvider } = await import('./firebase');
     try {
       await signInWithPopup(auth, googleProvider);
-      window.location.href = '/';
+      navigate('/');
     } catch (error: any) {
       console.error("Login failed", error);
       setErrorMsg(error.message || "An unknown error occurred during login.");
