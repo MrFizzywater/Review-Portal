@@ -1,6 +1,6 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, Auth } from 'firebase/auth';
-import { getFirestore, Firestore, initializeFirestore } from 'firebase/firestore';
+import { getFirestore, Firestore, initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 // @ts-ignore
 import defaultFirebaseConfigJson from '../firebase-applet-config.json';
 const defaultFirebaseConfig = defaultFirebaseConfigJson as any;
@@ -132,8 +132,8 @@ export async function initFirebase() {
   }
 
   const firestoreSettings = {
+    localCache: memoryLocalCache(),
     experimentalForceLongPolling: true,
-    experimentalAutoDetectLongPolling: true,
   };
 
   try {
