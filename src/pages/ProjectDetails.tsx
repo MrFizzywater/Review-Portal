@@ -679,31 +679,6 @@ export default function ProjectDetails({ user }: { user: User }) {
       setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)
     );
 
-    // Fast network/credential pre-check
-    try {
-      await getDocFromServer(doc(db, 'projects', projectId!));
-    } catch (diagError: any) {
-      console.error("Connection diagnostic failed:", diagError);
-      const errMsgi = diagError?.message || diagError?.toString() || '';
-      let triageMsg = '';
-      
-      if (diagError?.code === 'unavailable' || errMsgi.toLowerCase().includes('offline')) {
-        triageMsg = `\n\n💡 REASON: Browser Sandboxing Blocked the Connection.\nModern browsers block nested third-party database connections inside the Live Preview panel (iframe).\n\n👉 ACTION REQUIRED: Please click "Open in a new tab" in the top-right corner of this live preview panel. Running the app directly in its own tab bypasses sandboxing and allows direct database communication!`;
-      } else if (diagError?.code === 'permission-denied') {
-        triageMsg = `\n\n💡 REASON: Permission Denied.\nYour Firestore Rules on your custom project might be blocking reads. Make sure you have initialized your Firestore Database and deployed rules from 'firestore.rules' (or set it to Test mode during setup).`;
-      } else {
-        triageMsg = `\n\n💡 REASON: Invalid credentials, wrong Project ID, or Firestore is not enabled on this Google Cloud project. Please check if your config keys are completely correct and make sure Firestore Database is activated in console.firebase.google.com.`;
-      }
-
-      alert(`Firestore Connection Error!\n\n` +
-            `We couldn't connect directly to your Firestore database.\n\n` +
-            `Error message: ${errMsgi}\n` +
-            `Error code: ${diagError?.code || 'unknown'}` +
-            triageMsg);
-      setIsSavingInvoice(false);
-      return;
-    }
-
     try {
       const subtotal = invoiceItems.reduce((sum, item) => sum + Number(item.amount), 0);
       const taxRate = creatorProfile?.taxRate || 0;
@@ -735,18 +710,39 @@ export default function ProjectDetails({ user }: { user: User }) {
       alert('Invoice saved successfully');
     } catch (error: any) {
       console.error("Error saving invoice", error);
-      if (error?.message === 'TIMEOUT') {
+
+      // Call diagnostic only after an error occurs or times out
+      let diagnosticError: any = null;
+      try {
+        await getDocFromServer(doc(db, 'projects', projectId!));
+      } catch (diagError) {
+        diagnosticError = diagError;
+      }
+
+      if (error?.message === 'TIMEOUT' || error?.code === 'unavailable') {
         const dbInfo = localStorage.getItem('custom_firebase_config')
           ? 'using a custom Firebase project'
           : 'using the built-in default developer Firebase project';
+
+        let triageMsg = '';
+        if (diagnosticError) {
+          const errMsgi = diagnosticError?.message || diagnosticError?.toString() || '';
+          if (diagnosticError?.code === 'unavailable' || errMsgi.toLowerCase().includes('offline')) {
+            triageMsg = `\n\n💡 DIAGNOSTIC: Modern browsers and proxy routers (like behind Nginx/Coolify) can block raw WebSocket or gRPC database connections. Running standard connections without experimental long polling helps, or opening the app in a new tab.`;
+          } else if (diagnosticError?.code === 'permission-denied') {
+            triageMsg = `\n\n💡 DIAGNOSTIC: Rules check failed. Your Firestore collection 'projects' might have write rule restrictions. Deploy rules from 'firestore.rules'.`;
+          } else {
+            triageMsg = `\n\n💡 DIAGNOSTIC: Got other diagnostic error: ${errMsgi}`;
+          }
+        }
 
         alert(`Firestore Write Connection Timed Out! (${timeoutMs / 1000}s)\n\n` +
           `Your application is currently ${dbInfo}.\n\n` +
           `Because Google Sign-In succeeded, this write timeout points to Firestore being inaccessible.\n` +
           `Please check this list of common fixes:\n\n` +
-          `1. UNINITIALIZED FIRESTORE: If using your own Firebase project (custom credentials), you MUST click "Firestore Database" in your Firebase Sidebar and select "Create Database" to activate the service.\n\n` +
-          `2. PREVIEW LIMITS: The default preview instance doesn't have a backend database provisioned. Sign out and connect your own Firebase project via the login screen's "Advanced" option.\n\n` +
-          `3. SANDBOXING BLOCKED: Live preview frames block database synchronization cookies. Click "Open in a new tab" in the top-right corner to open the app directly.`);
+          `1. UNINITIALIZED FIRESTORE: In your Firebase Console, click "Firestore Database" and select "Create Database" to activate the service.\n\n` +
+          `2. PREVIEW LIMITS: The default preview instance doesn't have a backend database provisioned. Connect your custom database.\n\n` +
+          `3. SANDBOXING BLOCKED: Opening direct tabs bypasses third-party blocks.` + triageMsg);
       } else {
         alert('Failed to save invoice: ' + (error?.message || error?.toString() || 'Unknown error'));
       }

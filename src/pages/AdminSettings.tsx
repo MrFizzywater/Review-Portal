@@ -93,31 +93,6 @@ export default function AdminSettings({ user }: { user: User }) {
       setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)
     );
 
-    // Fast connection diagnostic check
-    try {
-      await getDocFromServer(doc(db, 'users', user.uid));
-    } catch (diagError: any) {
-      console.error("Connection diagnostic failed:", diagError);
-      const errMsgi = diagError?.message || diagError?.toString() || '';
-      let triageMsg = '';
-      
-      if (diagError?.code === 'unavailable' || errMsgi.toLowerCase().includes('offline')) {
-        triageMsg = `\n\n💡 REASON: Browser Sandboxing Blocked the Connection.\nModern browsers block nested third-party database connections inside the Live Preview panel (iframe).\n\n👉 ACTION REQUIRED: Please click "Open in a new tab" in the top-right corner of this live preview panel. Running the app directly in its own tab bypasses sandboxing and allows direct database communication!`;
-      } else if (diagError?.code === 'permission-denied') {
-        triageMsg = `\n\n💡 REASON: Permission Denied.\nYour Firestore Rules on your custom project might be blocking reads. Make sure you have initialized your Firestore Database and deployed rules from 'firestore.rules' (or set it to Test mode during setup).`;
-      } else {
-        triageMsg = `\n\n💡 REASON: Invalid credentials, wrong Project ID, or Firestore is not enabled on this Google Cloud project. Please check your config keys and make sure Firestore Database is activated in console.firebase.google.com!`;
-      }
-
-      setMessage(`Firestore Connection Error!\n\n` +
-                 `We couldn't connect directly to your Firestore database.\n\n` +
-                 `Error message: ${errMsgi}\n` +
-                 `Error code: ${diagError?.code || 'unknown'}` +
-                 triageMsg);
-      setIsSaving(false);
-      return;
-    }
-
     try {
       await Promise.race([
         setDoc(doc(db, 'users', user.uid), profile, { merge: true }),
@@ -126,19 +101,39 @@ export default function AdminSettings({ user }: { user: User }) {
       setMessage('Settings saved successfully!');
     } catch (error: any) {
       console.error("Error saving profile", error);
-      if (error?.message === 'TIMEOUT') {
+      
+      // Call diagnostic only after an error occurs or times out
+      let diagnosticError: any = null;
+      try {
+        await getDocFromServer(doc(db, 'users', user.uid));
+      } catch (diagError) {
+        diagnosticError = diagError;
+      }
+
+      if (error?.message === 'TIMEOUT' || error?.code === 'unavailable') {
         const dbInfo = localStorage.getItem('custom_firebase_config')
           ? 'a custom Firebase project'
           : 'the built-in default Firebase project';
           
-        setMessage(`Firestore Connection Timed Out! (${timeoutMs / 1000}s)
-
-Your app is currently using ${dbInfo}. Because Firebase Auth (the login screen) completes successfully, this timeout means the client is unable to establish a write channel to Firestore.
-
-Please check the following steps:
-1. UNINITIALIZED DATABASE: In your Firebase Console (console.firebase.google.com), open this project, select "Firestore Database" in the left sidebar, and click "Create Database". Firebase Auth is active by default, but Firestore will ignore or hang on write queries until the database is explicitly initialized.
-2. SANDBOX WRITES: If you are running inside the AI Studio Live Preview panel, some browsers block database cookies. Please click "Open in a new tab" in the top-right corner of the live preview.
-3. FIREWALL/NETWORKS: Make sure you do not have extensions or firewalls active that block secure gRPC or web socket connections.`);
+        let triageMsg = '';
+        if (diagnosticError) {
+          const errMsgi = diagnosticError?.message || diagnosticError?.toString() || '';
+          if (diagnosticError?.code === 'unavailable' || errMsgi.toLowerCase().includes('offline')) {
+            triageMsg = `\n\n💡 DIAGNOSTIC: Modern browsers and proxy routers (like behind Nginx/Coolify) can block raw WebSocket or gRPC database connections. Running standard connections without experimental long polling helps, or opening the app in a new tab.`;
+          } else if (diagnosticError?.code === 'permission-denied') {
+            triageMsg = `\n\n💡 DIAGNOSTIC: Rules check failed. Your Firestore collection 'users' might have write rule restrictions. Deploy rules from 'firestore.rules'.`;
+          } else {
+            triageMsg = `\n\n💡 DIAGNOSTIC: Got other diagnostic error: ${errMsgi}`;
+          }
+        }
+          
+        setMessage(`Firestore Connection Timed Out! (${timeoutMs / 1000}s)\n\n` +
+          `Your app is currently using ${dbInfo}.\n\n` +
+          `Please check the following steps:\n` +
+          `1. UNINITIALIZED DATABASE: In your Firebase Console, make sure "Firestore Database" under this project is initialized with "Create Database".\n` +
+          `2. SANDBOX WRITES: If in the Live Preview panel, click "Open in a new tab".\n` +
+          `3. NETWORKS / FIREWALLS: Verify endpoints allow Firestore outbound requests.` + 
+          triageMsg);
       } else if (error?.code === 'permission-denied') {
         setMessage('Permission denied. Please try logging out and signing in again, or verify your database setup rules.');
       } else {
