@@ -2,15 +2,28 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 // @ts-ignore
-import defaultFirebaseConfig from '../firebase-applet-config.json';
+import defaultFirebaseConfigJson from '../firebase-applet-config.json';
+const defaultFirebaseConfig = defaultFirebaseConfigJson as any;
+
+// Build the config dynamically using environment variables exposed at build-time, with config file placeholders as backup.
+const firebaseConfig = {
+  apiKey: process.env.FIREBASE_API_KEY || defaultFirebaseConfig.apiKey,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN || defaultFirebaseConfig.authDomain,
+  projectId: process.env.FIREBASE_PROJECT_ID || defaultFirebaseConfig.projectId,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || defaultFirebaseConfig.storageBucket,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || defaultFirebaseConfig.messagingSenderId,
+  appId: process.env.FIREBASE_APP_ID || defaultFirebaseConfig.appId,
+  measurementId: process.env.FIREBASE_MEASUREMENT_ID || defaultFirebaseConfig.measurementId,
+  firestoreDatabaseId: defaultFirebaseConfig.firestoreDatabaseId,
+};
 
 // Allow overriding firebase config via localStorage for backup purposes
 const customConfigStr = localStorage.getItem('custom_firebase_config');
-const firebaseConfig = customConfigStr ? JSON.parse(customConfigStr) : defaultFirebaseConfig;
+const activeConfig = customConfigStr ? JSON.parse(customConfigStr) : firebaseConfig;
 
-const app = initializeApp(firebaseConfig);
-export const db = firebaseConfig.firestoreDatabaseId 
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+const app = initializeApp(activeConfig);
+export const db = activeConfig.firestoreDatabaseId 
+  ? getFirestore(app, activeConfig.firestoreDatabaseId)
   : getFirestore(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();

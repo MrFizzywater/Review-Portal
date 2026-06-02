@@ -1,7 +1,7 @@
 {
   "projectId": "mediareviewportal",
   "appId": "1:184112872333:web:34b1b8a31cd04df8ee5bc4",
-  "apiKey": "AIzaSyBpkA9bQa5ZXofONLIBRZX-Ngj_wJ2u4w8",
+  "apiKey": "__FIREBASE_API_KEY_PLACEHOLDER__",
   "authDomain": "mediareviewportal.firebaseapp.com",
   "storageBucket": "mediareviewportal.firebasestorage.app",
   "messagingSenderId": "184112872333",
