@@ -1,6 +1,6 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, Auth } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { getFirestore, Firestore, initializeFirestore } from 'firebase/firestore';
 // @ts-ignore
 import defaultFirebaseConfigJson from '../firebase-applet-config.json';
 const defaultFirebaseConfig = defaultFirebaseConfigJson as any;
@@ -131,8 +131,20 @@ export async function initFirebase() {
     app = getApp();
   }
 
-  db = activeConfig.firestoreDatabaseId 
-    ? getFirestore(app, activeConfig.firestoreDatabaseId)
-    : getFirestore(app);
+  const firestoreSettings = {
+    experimentalForceLongPolling: true,
+    experimentalAutoDetectLongPolling: true,
+  };
+
+  try {
+    db = activeConfig.firestoreDatabaseId 
+      ? initializeFirestore(app, firestoreSettings, activeConfig.firestoreDatabaseId)
+      : initializeFirestore(app, firestoreSettings);
+  } catch (error) {
+    console.warn("Firestore initialization with long polling failed or was already completed, using getFirestore fallback:", error);
+    db = activeConfig.firestoreDatabaseId 
+      ? getFirestore(app, activeConfig.firestoreDatabaseId)
+      : getFirestore(app);
+  }
   auth = getAuth(app);
 }
