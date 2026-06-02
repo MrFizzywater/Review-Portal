@@ -138,14 +138,10 @@ export async function initFirebase() {
     app = getApp();
   }
 
-  const isIframe = typeof window !== 'undefined' && window.self !== window.top;
   const firestoreSettings: any = {
     localCache: memoryLocalCache(),
+    experimentalForceLongPolling: true,
   };
-
-  if (isIframe) {
-    firestoreSettings.experimentalForceLongPolling = true;
-  }
 
   try {
     db = activeConfig.firestoreDatabaseId 

@@ -87,7 +87,7 @@ export default function AdminSettings({ user }: { user: User }) {
     }
 
     const isIframe = window.self !== window.top;
-    const timeoutMs = isIframe ? 10000 : 15000;
+    const timeoutMs = isIframe ? 20000 : 35000;
 
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)
