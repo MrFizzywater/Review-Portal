@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, getDocFromServer } from 'firebase/firestore';
 import { db, isFirebasePlaceholder } from '../firebase';
 import { User } from 'firebase/auth';
 import { ArrowLeft, Save, Upload, Image as ImageIcon, ExternalLink } from 'lucide-react';
@@ -92,6 +92,19 @@ export default function AdminSettings({ user }: { user: User }) {
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)
     );
+
+    // Fast connection diagnostic check
+    try {
+      await getDocFromServer(doc(db, 'users', user.uid));
+    } catch (diagError: any) {
+      console.error("Connection diagnostic failed:", diagError);
+      setMessage(`Firestore Connection Error!\n\n` +
+                 `We couldn't connect directly to your Firestore database. This usually means either the server is unreachable or the credentials/API keys configured are invalid.\n\n` +
+                 `Error message: ${diagError?.message || diagError?.toString()}\n` +
+                 `Error code: ${diagError?.code || 'unknown'}`);
+      setIsSaving(false);
+      return;
+    }
 
     try {
       await Promise.race([

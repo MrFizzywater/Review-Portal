@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, onSnapshot, addDoc, serverTimestamp, updateDoc, deleteDoc, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, onSnapshot, addDoc, serverTimestamp, updateDoc, deleteDoc, getDocs, getDocFromServer } from 'firebase/firestore';
 import { db, isFirebasePlaceholder } from '../firebase';
 import { User } from 'firebase/auth';
 import { ArrowLeft, Plus, Link as LinkIcon, Eye, CheckCircle, Clock, AlertCircle, ExternalLink, Image as ImageIcon, Settings, FileText, LayoutDashboard, Trash2, Save, Printer, Send, Edit2, ArrowUp, X, Download, Users, Upload } from 'lucide-react';
@@ -678,6 +678,19 @@ export default function ProjectDetails({ user }: { user: User }) {
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)
     );
+
+    // Fast network/credential pre-check
+    try {
+      await getDocFromServer(doc(db, 'projects', projectId!));
+    } catch (diagError: any) {
+      console.error("Connection diagnostic failed:", diagError);
+      alert(`Firestore Connection Error!\n\n` +
+            `We couldn't connect directly to your Firestore database. This usually means either the server is unreachable or the credentials/API keys configured are invalid.\n\n` +
+            `Error message: ${diagError?.message || diagError?.toString()}\n` +
+            `Error code: ${diagError?.code || 'unknown'}`);
+      setIsSavingInvoice(false);
+      return;
+    }
 
     try {
       const subtotal = invoiceItems.reduce((sum, item) => sum + Number(item.amount), 0);

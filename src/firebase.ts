@@ -1,4 +1,4 @@
-import { initializeApp, getApp, getApps } from 'firebase/app';
+import { initializeApp, getApp, getApps, deleteApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, Auth } from 'firebase/auth';
 import { getFirestore, Firestore, initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 // @ts-ignore
@@ -132,11 +132,17 @@ export async function initFirebase() {
   }
 
   let app;
-  if (getApps().length === 0) {
-    app = initializeApp(activeConfig);
-  } else {
-    app = getApp();
+  const existingApps = getApps();
+  if (existingApps.length > 0) {
+    for (const ea of existingApps) {
+      try {
+        await deleteApp(ea);
+      } catch (e) {
+        console.warn("Failed to delete existing app during reset:", e);
+      }
+    }
   }
+  app = initializeApp(activeConfig);
 
   const firestoreSettings: any = {
     localCache: memoryLocalCache(),
