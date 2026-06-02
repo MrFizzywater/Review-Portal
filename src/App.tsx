@@ -39,6 +39,7 @@ export default function App() {
 function Login() {
   const navigate = useNavigate();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [showConfigOptions, setShowConfigOptions] = useState(false);
   const [customConfig, setCustomConfig] = useState(() => localStorage.getItem('custom_firebase_config') || '');
 
@@ -46,14 +47,16 @@ function Login() {
 
   const handleLogin = async () => {
     setErrorMsg(null);
+    setIsLoading(true);
     const { signInWithPopup } = await import('firebase/auth');
     const { auth, googleProvider } = await import('./firebase');
     try {
       await signInWithPopup(auth, googleProvider);
-      navigate('/');
+      // Wait for onAuthStateChanged to pick up the state & redirect reactively
     } catch (error: any) {
       console.error("Login failed", error);
       setErrorMsg(error.message || "An unknown error occurred during login.");
+      setIsLoading(false);
     }
   };
 
@@ -121,9 +124,20 @@ function Login() {
 
         <button
           onClick={handleLogin}
-          className="w-full bg-black dark:bg-white text-white dark:text-black rounded-lg py-3 font-medium hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors mb-4"
+          disabled={isLoading}
+          className="w-full bg-black dark:bg-white text-white dark:text-black rounded-lg py-3 font-medium hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors mb-4 disabled:opacity-50 flex items-center justify-center gap-2"
         >
-          Sign in with Google
+          {isLoading ? (
+            <>
+              <svg className="animate-spin h-5 w-5 text-current" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              <span>Signing in...</span>
+            </>
+          ) : (
+            'Sign in with Google'
+          )}
         </button>
 
         <button 

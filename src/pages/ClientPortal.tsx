@@ -150,6 +150,17 @@ export default function ClientPortal() {
   useEffect(() => {
     if (!isAuthenticated || !projectId) return;
 
+    const getTimestampMillis = (timestamp: any): number => {
+      if (!timestamp) return 0;
+      if (typeof timestamp.toMillis === 'function') {
+        return timestamp.toMillis();
+      }
+      if (timestamp.seconds !== undefined) {
+        return timestamp.seconds * 1000 + Math.floor((timestamp.nanoseconds || 0) / 1000000);
+      }
+      return 0;
+    };
+
     const qVersions = query(collection(db, 'versions'), where('projectId', '==', projectId));
     const unsubVersions = onSnapshot(qVersions, (snapshot) => {
       const vData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
@@ -159,19 +170,19 @@ export default function ClientPortal() {
     const qAssets = query(collection(db, 'project_assets'), where('projectId', '==', projectId));
     const unsubAssets = onSnapshot(qAssets, (snapshot) => {
       const aData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-      setAssets(aData.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis()));
+      setAssets(aData.sort((a, b) => getTimestampMillis(b.createdAt) - getTimestampMillis(a.createdAt)));
     });
 
     const qRequests = query(collection(db, 'change_requests'), where('projectId', '==', projectId));
     const unsubRequests = onSnapshot(qRequests, (snapshot) => {
       const rData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-      setChangeRequests(rData.sort((a, b) => a.createdAt?.toMillis() - b.createdAt?.toMillis()));
+      setChangeRequests(rData.sort((a, b) => getTimestampMillis(a.createdAt) - getTimestampMillis(b.createdAt)));
     });
 
     const qSuggestions = query(collection(db, 'viewer_suggestions'), where('projectId', '==', projectId));
     const unsubSuggestions = onSnapshot(qSuggestions, (snapshot) => {
       const sData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-      setViewerSuggestions(sData.sort((a, b) => a.createdAt?.toMillis() - b.createdAt?.toMillis()));
+      setViewerSuggestions(sData.sort((a, b) => getTimestampMillis(a.createdAt) - getTimestampMillis(b.createdAt)));
     });
 
     return () => {

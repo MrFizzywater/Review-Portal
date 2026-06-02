@@ -58,17 +58,28 @@ export default function CreatorDashboard({ user }: { user: User }) {
     address: '', street: '', city: '', state: '', zip: '', country: '', url: '', logoUrl: '' 
   });
 
+  const getTimestampMillis = (timestamp: any): number => {
+    if (!timestamp) return 0;
+    if (typeof timestamp.toMillis === 'function') {
+      return timestamp.toMillis();
+    }
+    if (timestamp.seconds !== undefined) {
+      return timestamp.seconds * 1000 + Math.floor((timestamp.nanoseconds || 0) / 1000000);
+    }
+    return 0;
+  };
+
   useEffect(() => {
     const qProjects = query(collection(db, 'projects'), where('creatorId', '==', user.uid));
     const unsubscribeProjects = onSnapshot(qProjects, (snapshot) => {
       const projData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Project));
-      setProjects(projData.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis()));
+      setProjects(projData.sort((a, b) => getTimestampMillis(b.createdAt) - getTimestampMillis(a.createdAt)));
     });
 
     const qClients = query(collection(db, 'clients'), where('creatorId', '==', user.uid));
     const unsubscribeClients = onSnapshot(qClients, (snapshot) => {
       const clientData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Client));
-      setClients(clientData.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis()));
+      setClients(clientData.sort((a, b) => getTimestampMillis(b.createdAt) - getTimestampMillis(a.createdAt)));
     });
 
     return () => {

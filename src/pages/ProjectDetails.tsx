@@ -335,6 +335,17 @@ export default function ProjectDetails({ user }: { user: User }) {
   useEffect(() => {
     if (!projectId) return;
 
+    const getTimestampMillis = (timestamp: any): number => {
+      if (!timestamp) return 0;
+      if (typeof timestamp.toMillis === 'function') {
+        return timestamp.toMillis();
+      }
+      if (timestamp.seconds !== undefined) {
+        return timestamp.seconds * 1000 + Math.floor((timestamp.nanoseconds || 0) / 1000000);
+      }
+      return 0;
+    };
+
     const fetchProject = async () => {
       try {
         const userDoc = await getDoc(doc(db, 'users', user.uid));
@@ -385,7 +396,7 @@ export default function ProjectDetails({ user }: { user: User }) {
     const qRequests = query(collection(db, 'change_requests'), where('projectId', '==', projectId));
     const unsubRequests = onSnapshot(qRequests, (snapshot) => {
       const rData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-      setChangeRequests(rData.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis()));
+      setChangeRequests(rData.sort((a, b) => getTimestampMillis(b.createdAt) - getTimestampMillis(a.createdAt)));
     }, (error) => {
       console.error("Error with change requests snapshot:", error);
     });
@@ -393,7 +404,7 @@ export default function ProjectDetails({ user }: { user: User }) {
     const qAssets = query(collection(db, 'project_assets'), where('projectId', '==', projectId));
     const unsubAssets = onSnapshot(qAssets, (snapshot) => {
       const aData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-      setAssets(aData.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis()));
+      setAssets(aData.sort((a, b) => getTimestampMillis(b.createdAt) - getTimestampMillis(a.createdAt)));
     }, (error) => {
       console.error("Error with project assets snapshot:", error);
     });
@@ -401,7 +412,7 @@ export default function ProjectDetails({ user }: { user: User }) {
     const qSuggestions = query(collection(db, 'viewer_suggestions'), where('projectId', '==', projectId));
     const unsubSuggestions = onSnapshot(qSuggestions, (snapshot) => {
       const sData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-      setViewerSuggestions(sData.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis()));
+      setViewerSuggestions(sData.sort((a, b) => getTimestampMillis(b.createdAt) - getTimestampMillis(a.createdAt)));
     }, (error) => {
       console.error("Error with viewer suggestions snapshot:", error);
     });
