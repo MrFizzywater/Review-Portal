@@ -47,7 +47,6 @@ export default function CreatorDashboard({ user }: { user: User }) {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [collapsedClients, setCollapsedClients] = useState<Set<string>>(new Set());
-  const [isAccordionMode, setIsAccordionMode] = useState(true);
   
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [newProject, setNewProject] = useState<any>({ title: '', clientId: '', clientName: '', password: '', maxRevisions: 3 });
@@ -214,12 +213,6 @@ export default function CreatorDashboard({ user }: { user: User }) {
       if (next.has(clientName)) {
         next.delete(clientName);
       } else {
-        if (isAccordionMode) {
-          // In accordion mode, we collapse everyone else
-          const clientsToCollapse = new Set(Array.from(new Set(projects.map(p => p.clientName || 'No Client'))));
-          clientsToCollapse.delete(clientName);
-          return clientsToCollapse;
-        }
         next.add(clientName);
       }
       return next;
@@ -312,24 +305,28 @@ export default function CreatorDashboard({ user }: { user: User }) {
               </div>
             </div>
 
-            <div className="flex justify-end items-center gap-4 mb-4">
-              <label className="flex items-center gap-2 cursor-pointer group">
-                <div className="text-[10px] font-black uppercase tracking-widest text-gray-400 group-hover:text-gray-600 transition-colors">Accordion Mode</div>
-                <div 
-                  onClick={() => setIsAccordionMode(!isAccordionMode)}
-                  className={`relative w-8 h-4 rounded-full transition-colors ${isAccordionMode ? 'bg-black dark:bg-white' : 'bg-gray-200 dark:bg-gray-700'}`}
-                >
-                  <div className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full transition-transform ${isAccordionMode ? 'translate-x-4 bg-white dark:bg-black' : 'bg-white'}`} />
-                </div>
-              </label>
-              <div className="w-px h-3 bg-gray-200 dark:bg-gray-700" />
+            <div className="flex justify-end items-center gap-3 mb-4">
               <button 
-                onClick={() => setCollapsedClients(new Set(Array.from(new Set(projects.map(p => p.clientName || 'No Client')))))}
-                className="text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-black dark:hover:text-white flex items-center gap-1.5 transition-colors"
+                onClick={() => {
+                  const allClients = Array.from(new Set(projects.map(p => p.clientName || 'No Client')));
+                  setCollapsedClients(new Set(allClients));
+                }}
+                className="text-xs font-semibold uppercase tracking-wider text-gray-400 hover:text-black dark:hover:text-white flex items-center gap-1.5 transition-colors"
                 title="Collapse all sections"
               >
                 <ChevronUp className="w-3.5 h-3.5" />
                 Collapse All
+              </button>
+              <div className="w-px h-3 bg-gray-200 dark:bg-gray-700" />
+              <button 
+                onClick={() => {
+                  setCollapsedClients(new Set());
+                }}
+                className="text-xs font-semibold uppercase tracking-wider text-gray-400 hover:text-black dark:hover:text-white flex items-center gap-1.5 transition-colors"
+                title="Expand all sections"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+                Expand All
               </button>
             </div>
 
