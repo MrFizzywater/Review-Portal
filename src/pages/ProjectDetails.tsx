@@ -665,6 +665,10 @@ export default function ProjectDetails({ user }: { user: User }) {
 
   const saveInvoice = async () => {
     setIsSavingInvoice(true);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('TIMEOUT')), 7000)
+    );
+
     try {
       const subtotal = invoiceItems.reduce((sum, item) => sum + Number(item.amount), 0);
       const taxRate = creatorProfile?.taxRate || 0;
@@ -684,14 +688,23 @@ export default function ProjectDetails({ user }: { user: User }) {
         taxAmount,
         total
       };
-      await updateDoc(doc(db, 'projects', projectId!), {
-        invoice: invoiceData
-      });
+
+      await Promise.race([
+        updateDoc(doc(db, 'projects', projectId!), {
+          invoice: invoiceData
+        }),
+        timeoutPromise
+      ]);
+
       setProject({ ...project, invoice: invoiceData });
       alert('Invoice saved successfully');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving invoice", error);
-      alert('Failed to save invoice');
+      if (error?.message === 'TIMEOUT') {
+        alert('Connection timed out. If you are in the embedded preview, please click "Open in a new tab" in the top-right corner. Some browsers block database connection cookies inside embedded frames.');
+      } else {
+        alert('Failed to save invoice: ' + (error?.message || error?.toString() || 'Unknown error'));
+      }
     } finally {
       setIsSavingInvoice(false);
     }

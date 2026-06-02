@@ -79,12 +79,26 @@ export default function AdminSettings({ user }: { user: User }) {
     e.preventDefault();
     setIsSaving(true);
     setMessage('');
+
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('TIMEOUT')), 7000)
+    );
+
     try {
-      await setDoc(doc(db, 'users', user.uid), profile, { merge: true });
+      await Promise.race([
+        setDoc(doc(db, 'users', user.uid), profile, { merge: true }),
+        timeoutPromise
+      ]);
       setMessage('Settings saved successfully!');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving profile", error);
-      setMessage('Failed to save settings.');
+      if (error?.message === 'TIMEOUT') {
+        setMessage('Connection timed out. If you are in the embedded preview, please open this app in a new tab using the button in the top-right corner. Browsers block database database cookies inside iframe frames.');
+      } else if (error?.code === 'permission-denied') {
+        setMessage('Permission denied. Please try logging out and signing in again, or verify your database setup rules.');
+      } else {
+        setMessage('Failed to save settings: ' + (error?.message || error?.toString() || 'Unknown error'));
+      }
     } finally {
       setIsSaving(false);
     }
