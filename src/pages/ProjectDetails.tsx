@@ -346,25 +346,38 @@ export default function ProjectDetails({ user }: { user: User }) {
       return 0;
     };
 
-    const fetchProject = async () => {
-      try {
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        if (userDoc.exists()) {
-          setCreatorProfile(userDoc.data());
-        }
+    // User/Creator profile snapshot
+    const unsubUser = onSnapshot(doc(db, 'users', user.uid), (userSnap) => {
+      if (userSnap.exists()) {
+        setCreatorProfile(userSnap.data());
+      }
+    }, (error) => {
+      console.error("Error with creator profile snapshot:", error);
+    });
 
-        const docRef = doc(db, 'projects', projectId);
-        const docSnap = await getDoc(docRef);
+    // Project snapshot
+    const unsubProject = onSnapshot(doc(db, 'projects', projectId), async (docSnap) => {
+      try {
         if (docSnap.exists()) {
           const data = { id: docSnap.id, ...docSnap.data() } as any;
           setProject(data);
-          setEditForm({ title: data.title || '', clientName: data.clientName || '', clientEmail: data.clientEmail || '', password: data.password || '', clientId: data.clientId || '' });
+          setEditForm({ 
+            title: data.title || '', 
+            clientName: data.clientName || '', 
+            clientEmail: data.clientEmail || '', 
+            password: data.password || '', 
+            clientId: data.clientId || '' 
+          });
           
           if (data.clientId) {
             const clientDoc = await getDoc(doc(db, 'clients', data.clientId));
             if (clientDoc.exists()) {
               setClientDetails({ id: clientDoc.id, ...clientDoc.data() });
+            } else {
+              setClientDetails(null);
             }
+          } else {
+            setClientDetails(null);
           }
 
           if (data.invoice) {
@@ -378,12 +391,14 @@ export default function ProjectDetails({ user }: { user: User }) {
           }
         }
       } catch (error) {
-        console.error("Error fetching project details:", error);
+        console.error("Error displaying project snapshot details:", error);
       } finally {
         setLoading(false);
       }
-    };
-    fetchProject();
+    }, (error) => {
+      console.error("Error with project snapshot:", error);
+      setLoading(false);
+    });
 
     const qVersions = query(collection(db, 'versions'), where('projectId', '==', projectId));
     const unsubVersions = onSnapshot(qVersions, (snapshot) => {
@@ -425,6 +440,8 @@ export default function ProjectDetails({ user }: { user: User }) {
     });
 
     return () => {
+      unsubProject();
+      unsubUser();
       unsubVersions();
       unsubRequests();
       unsubAssets();

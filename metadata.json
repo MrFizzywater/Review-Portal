@@ -1,5 +1,6 @@
 {
   "name": "Media Review Portal",
   "description": "Share videos and photos with clients on password-protected pages for review, feedback, and approval.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
