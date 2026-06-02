@@ -83,12 +83,41 @@ function Login() {
       if (!customConfig.trim()) {
         localStorage.removeItem('custom_firebase_config');
       } else {
-        JSON.parse(customConfig); // validate JSON
-        localStorage.setItem('custom_firebase_config', customConfig);
+        const inputStr = customConfig.trim();
+        let parsed: any = null;
+        try {
+          parsed = JSON.parse(inputStr);
+        } catch (jsonErr) {
+          // Robust extract from JS object format
+          const keys = [
+            'apiKey',
+            'authDomain',
+            'projectId',
+            'storageBucket',
+            'messagingSenderId',
+            'appId',
+            'measurementId',
+            'firestoreDatabaseId'
+          ];
+          const result: Record<string, string> = {};
+          for (const key of keys) {
+            const regex = new RegExp(`['"]?${key}['"]?\\s*:\\s*['"]([^'"]+)['"]`, 'i');
+            const match = inputStr.match(regex);
+            if (match && match[1]) {
+              result[key] = match[1];
+            }
+          }
+          if (Object.keys(result).length > 0 && result.apiKey && result.projectId) {
+            parsed = result;
+          } else {
+            throw new Error("Could not parse coordinates from configuration");
+          }
+        }
+        localStorage.setItem('custom_firebase_config', JSON.stringify(parsed));
       }
       window.location.reload();
     } catch (e) {
-      alert("Invalid JSON format. Please paste a valid Firebase JS config object.");
+      alert("Invalid format. Please paste a valid Firebase JS config object (JSON or copied javascript object structure containing apiKey/projectId).");
     }
   };
 

@@ -684,10 +684,22 @@ export default function ProjectDetails({ user }: { user: User }) {
       await getDocFromServer(doc(db, 'projects', projectId!));
     } catch (diagError: any) {
       console.error("Connection diagnostic failed:", diagError);
+      const errMsgi = diagError?.message || diagError?.toString() || '';
+      let triageMsg = '';
+      
+      if (diagError?.code === 'unavailable' || errMsgi.toLowerCase().includes('offline')) {
+        triageMsg = `\n\n💡 REASON: Browser Sandboxing Blocked the Connection.\nModern browsers block nested third-party database connections inside the Live Preview panel (iframe).\n\n👉 ACTION REQUIRED: Please click "Open in a new tab" in the top-right corner of this live preview panel. Running the app directly in its own tab bypasses sandboxing and allows direct database communication!`;
+      } else if (diagError?.code === 'permission-denied') {
+        triageMsg = `\n\n💡 REASON: Permission Denied.\nYour Firestore Rules on your custom project might be blocking reads. Make sure you have initialized your Firestore Database and deployed rules from 'firestore.rules' (or set it to Test mode during setup).`;
+      } else {
+        triageMsg = `\n\n💡 REASON: Invalid credentials, wrong Project ID, or Firestore is not enabled on this Google Cloud project. Please check if your config keys are completely correct and make sure Firestore Database is activated in console.firebase.google.com.`;
+      }
+
       alert(`Firestore Connection Error!\n\n` +
-            `We couldn't connect directly to your Firestore database. This usually means either the server is unreachable or the credentials/API keys configured are invalid.\n\n` +
-            `Error message: ${diagError?.message || diagError?.toString()}\n` +
-            `Error code: ${diagError?.code || 'unknown'}`);
+            `We couldn't connect directly to your Firestore database.\n\n` +
+            `Error message: ${errMsgi}\n` +
+            `Error code: ${diagError?.code || 'unknown'}` +
+            triageMsg);
       setIsSavingInvoice(false);
       return;
     }
