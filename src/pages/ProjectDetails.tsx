@@ -673,7 +673,7 @@ export default function ProjectDetails({ user }: { user: User }) {
     }
 
     const isIframe = window.self !== window.top;
-    const timeoutMs = isIframe ? 10000 : 35000;
+    const timeoutMs = isIframe ? 10000 : 15000;
 
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)
@@ -711,11 +711,17 @@ export default function ProjectDetails({ user }: { user: User }) {
     } catch (error: any) {
       console.error("Error saving invoice", error);
       if (error?.message === 'TIMEOUT') {
-        if (isIframe) {
-          alert('Connection timed out. If you are in the embedded preview, please click "Open in a new tab" in the top-right corner. Some browsers block database connection cookies inside embedded frames.');
-        } else {
-          alert('Connection timed out. Please check your internet connection or try again. The server is taking too long to respond.');
-        }
+        const dbInfo = localStorage.getItem('custom_firebase_config')
+          ? 'using a custom Firebase project'
+          : 'using the built-in default developer Firebase project';
+
+        alert(`Firestore Write Connection Timed Out! (${timeoutMs / 1000}s)\n\n` +
+          `Your application is currently ${dbInfo}.\n\n` +
+          `Because Google Sign-In succeeded, this write timeout points to Firestore being inaccessible.\n` +
+          `Please check this list of common fixes:\n\n` +
+          `1. UNINITIALIZED FIRESTORE: If using your own Firebase project (custom credentials), you MUST click "Firestore Database" in your Firebase Sidebar and select "Create Database" to activate the service.\n\n` +
+          `2. PREVIEW LIMITS: The default preview instance doesn't have a backend database provisioned. Sign out and connect your own Firebase project via the login screen's "Advanced" option.\n\n` +
+          `3. SANDBOXING BLOCKED: Live preview frames block database synchronization cookies. Click "Open in a new tab" in the top-right corner to open the app directly.`);
       } else {
         alert('Failed to save invoice: ' + (error?.message || error?.toString() || 'Unknown error'));
       }

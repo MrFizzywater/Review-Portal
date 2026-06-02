@@ -87,7 +87,7 @@ export default function AdminSettings({ user }: { user: User }) {
     }
 
     const isIframe = window.self !== window.top;
-    const timeoutMs = isIframe ? 10000 : 35000;
+    const timeoutMs = isIframe ? 10000 : 15000;
 
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)
@@ -102,11 +102,18 @@ export default function AdminSettings({ user }: { user: User }) {
     } catch (error: any) {
       console.error("Error saving profile", error);
       if (error?.message === 'TIMEOUT') {
-        if (isIframe) {
-          setMessage('Connection timed out. If you are in the embedded preview, please open this app in a new tab using the button in the top-right corner. Browsers block database cookies inside iframe frames.');
-        } else {
-          setMessage('Connection timed out. Please check your internet connection or try again. The server is taking too long to respond.');
-        }
+        const dbInfo = localStorage.getItem('custom_firebase_config')
+          ? 'a custom Firebase project'
+          : 'the built-in default Firebase project';
+          
+        setMessage(`Firestore Connection Timed Out! (${timeoutMs / 1000}s)
+
+Your app is currently using ${dbInfo}. Because Firebase Auth (the login screen) completes successfully, this timeout means the client is unable to establish a write channel to Firestore.
+
+Please check the following steps:
+1. UNINITIALIZED DATABASE: In your Firebase Console (console.firebase.google.com), open this project, select "Firestore Database" in the left sidebar, and click "Create Database". Firebase Auth is active by default, but Firestore will ignore or hang on write queries until the database is explicitly initialized.
+2. SANDBOX WRITES: If you are running inside the AI Studio Live Preview panel, some browsers block database cookies. Please click "Open in a new tab" in the top-right corner of the live preview.
+3. FIREWALL/NETWORKS: Make sure you do not have extensions or firewalls active that block secure gRPC or web socket connections.`);
       } else if (error?.code === 'permission-denied') {
         setMessage('Permission denied. Please try logging out and signing in again, or verify your database setup rules.');
       } else {
@@ -355,10 +362,19 @@ export default function AdminSettings({ user }: { user: User }) {
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-4 border-t border-gray-100 dark:border-gray-700">
-              <span className={`text-sm ${message.includes('success') ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+            {message && (
+              <div 
+                className={`p-4 rounded-lg text-sm leading-relaxed whitespace-pre-wrap border text-left ${
+                  message.includes('successfully') 
+                    ? 'bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800/60' 
+                    : 'bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800'
+                }`}
+              >
                 {message}
-              </span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end pt-4 border-t border-gray-100 dark:border-gray-700">
               <button
                 type="submit"
                 disabled={isSaving}

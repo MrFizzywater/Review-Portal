@@ -138,17 +138,21 @@ export async function initFirebase() {
     app = getApp();
   }
 
-  const firestoreSettings = {
+  const isIframe = typeof window !== 'undefined' && window.self !== window.top;
+  const firestoreSettings: any = {
     localCache: memoryLocalCache(),
-    experimentalForceLongPolling: true,
   };
+
+  if (isIframe) {
+    firestoreSettings.experimentalForceLongPolling = true;
+  }
 
   try {
     db = activeConfig.firestoreDatabaseId 
       ? initializeFirestore(app, firestoreSettings, activeConfig.firestoreDatabaseId)
       : initializeFirestore(app, firestoreSettings);
   } catch (error) {
-    console.warn("Firestore initialization with long polling failed or was already completed, using getFirestore fallback:", error);
+    console.warn("Firestore initialization failed or was already completed, using getFirestore fallback:", error);
     db = activeConfig.firestoreDatabaseId 
       ? getFirestore(app, activeConfig.firestoreDatabaseId)
       : getFirestore(app);
