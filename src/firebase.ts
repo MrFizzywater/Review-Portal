@@ -9,24 +9,56 @@ const defaultFirebaseConfig = defaultFirebaseConfigJson as any;
 const cleanStr = (val: any): any => {
   if (typeof val !== 'string') return val;
   let str = val.trim();
-  while (true) {
-    if (str.startsWith('"') && str.endsWith('"')) {
+
+  // Strip potential accidentally copied key prefix e.g. 'authDomain: "value",'
+  const colonIndex = str.indexOf(':');
+  if (colonIndex !== -1) {
+    const prefix = str.substring(0, colonIndex).trim().toLowerCase();
+    const keysToCheck = ['apikey', 'authdomain', 'projectid', 'storagebucket', 'messagingsenderid', 'appid', 'measurementid'];
+    if (keysToCheck.includes(prefix)) {
+      str = str.substring(colonIndex + 1).trim();
+    }
+  }
+
+  let changed = true;
+  while (changed) {
+    const prev = str;
+    str = str.trim();
+    
+    // Remove trailing comma or semicolon
+    if (str.endsWith(',') || str.endsWith(';')) {
+      str = str.slice(0, -1);
+    }
+    // Remove outer standard quotes
+    else if (str.startsWith('"') && str.endsWith('"')) {
       str = str.slice(1, -1);
     } else if (str.startsWith("'") && str.endsWith("'")) {
       str = str.slice(1, -1);
-    } else if (str.startsWith('\\"') && str.endsWith('\\"')) {
+    }
+    // Remove outer escaped quotes
+    else if (str.startsWith('\\"') && str.endsWith('\\"')) {
       str = str.slice(2, -2);
     } else if (str.startsWith("\\'") && str.endsWith("\\'")) {
       str = str.slice(2, -2);
-    } else if (str.startsWith('\\') || str.endsWith('\\')) {
-      if (str.startsWith('\\')) str = str.slice(1);
-      if (str.endsWith('\\')) str = str.slice(0, -1);
-    } else {
-      break;
     }
-    str = str.trim();
+    // Remove stray backslashes or unmatched quotes at the edges
+    else if (str.startsWith('\\')) {
+      str = str.slice(1);
+    } else if (str.endsWith('\\')) {
+      str = str.slice(0, -1);
+    } else if (str.startsWith('"')) {
+      str = str.slice(1);
+    } else if (str.endsWith('"')) {
+      str = str.slice(0, -1);
+    } else if (str.startsWith("'")) {
+      str = str.slice(1);
+    } else if (str.endsWith("'")) {
+      str = str.slice(0, -1);
+    }
+
+    changed = (str !== prev);
   }
-  return str;
+  return str.trim();
 };
 
 const cleanConfigObj = (config: Record<string, any>): Record<string, any> => {
