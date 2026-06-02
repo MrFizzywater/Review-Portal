@@ -72,6 +72,7 @@ const cleanConfigObj = (config: Record<string, any>): Record<string, any> => {
 export let db: Firestore;
 export let auth: Auth;
 export const googleProvider = new GoogleAuthProvider();
+export let isFirebasePlaceholder = false;
 
 export async function initFirebase() {
   let configToUse = { ...defaultFirebaseConfig };
@@ -123,6 +124,12 @@ export async function initFirebase() {
   }
 
   const activeConfig = cleanConfigObj(configToUse);
+
+  if (!activeConfig.apiKey || activeConfig.apiKey.includes('PLACEHOLDER') || activeConfig.apiKey === '') {
+    isFirebasePlaceholder = true;
+  } else {
+    isFirebasePlaceholder = false;
+  }
 
   let app;
   if (getApps().length === 0) {

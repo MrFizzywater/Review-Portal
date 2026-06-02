@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, onSnapshot, addDoc, serverTimestamp, updateDoc, deleteDoc, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, isFirebasePlaceholder } from '../firebase';
 import { User } from 'firebase/auth';
 import { ArrowLeft, Plus, Link as LinkIcon, Eye, CheckCircle, Clock, AlertCircle, ExternalLink, Image as ImageIcon, Settings, FileText, LayoutDashboard, Trash2, Save, Printer, Send, Edit2, ArrowUp, X, Download, Users, Upload } from 'lucide-react';
 import { format } from 'date-fns';
@@ -665,8 +665,18 @@ export default function ProjectDetails({ user }: { user: User }) {
 
   const saveInvoice = async () => {
     setIsSavingInvoice(true);
+
+    if (isFirebasePlaceholder) {
+      alert('No active Firebase database configured. If using a custom database, please sign out and configure it in "Advanced: Custom Database Connection" at login.');
+      setIsSavingInvoice(false);
+      return;
+    }
+
+    const isIframe = window.self !== window.top;
+    const timeoutMs = isIframe ? 10000 : 35000;
+
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('TIMEOUT')), 7000)
+      setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)
     );
 
     try {
@@ -701,7 +711,11 @@ export default function ProjectDetails({ user }: { user: User }) {
     } catch (error: any) {
       console.error("Error saving invoice", error);
       if (error?.message === 'TIMEOUT') {
-        alert('Connection timed out. If you are in the embedded preview, please click "Open in a new tab" in the top-right corner. Some browsers block database connection cookies inside embedded frames.');
+        if (isIframe) {
+          alert('Connection timed out. If you are in the embedded preview, please click "Open in a new tab" in the top-right corner. Some browsers block database connection cookies inside embedded frames.');
+        } else {
+          alert('Connection timed out. Please check your internet connection or try again. The server is taking too long to respond.');
+        }
       } else {
         alert('Failed to save invoice: ' + (error?.message || error?.toString() || 'Unknown error'));
       }

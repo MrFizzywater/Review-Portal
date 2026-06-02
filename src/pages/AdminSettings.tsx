@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, isFirebasePlaceholder } from '../firebase';
 import { User } from 'firebase/auth';
 import { ArrowLeft, Save, Upload, Image as ImageIcon, ExternalLink } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -80,8 +80,17 @@ export default function AdminSettings({ user }: { user: User }) {
     setIsSaving(true);
     setMessage('');
 
+    if (isFirebasePlaceholder) {
+      setMessage('No active Firebase database configured. If using a custom database, please sign out and configure it in "Advanced: Custom Database Connection" at login.');
+      setIsSaving(false);
+      return;
+    }
+
+    const isIframe = window.self !== window.top;
+    const timeoutMs = isIframe ? 10000 : 35000;
+
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('TIMEOUT')), 7000)
+      setTimeout(() => reject(new Error('TIMEOUT')), timeoutMs)
     );
 
     try {
@@ -93,7 +102,11 @@ export default function AdminSettings({ user }: { user: User }) {
     } catch (error: any) {
       console.error("Error saving profile", error);
       if (error?.message === 'TIMEOUT') {
-        setMessage('Connection timed out. If you are in the embedded preview, please open this app in a new tab using the button in the top-right corner. Browsers block database database cookies inside iframe frames.');
+        if (isIframe) {
+          setMessage('Connection timed out. If you are in the embedded preview, please open this app in a new tab using the button in the top-right corner. Browsers block database cookies inside iframe frames.');
+        } else {
+          setMessage('Connection timed out. Please check your internet connection or try again. The server is taking too long to respond.');
+        }
       } else if (error?.code === 'permission-denied') {
         setMessage('Permission denied. Please try logging out and signing in again, or verify your database setup rules.');
       } else {
